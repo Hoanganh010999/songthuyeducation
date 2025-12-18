@@ -1302,7 +1302,26 @@ router.post('/create-reminder', verifyApiKey, async (req, res) => {
   try {
     console.log('📥 [zalo-service] POST /api/message/create-reminder received');
 
-    const { thread_id, title, start_time, type = 'user', emoji = '⏰', repeat = 0 } = req.body;
+    // Support both old format (thread_id, title, start_time) and new format (options, threadId)
+    let thread_id, title, start_time, type, emoji, repeat;
+    
+    if (req.body.options && req.body.threadId) {
+      // New format from Laravel
+      thread_id = req.body.threadId;
+      title = req.body.options.title;
+      start_time = req.body.options.startTime;
+      type = req.body.type || 'user';
+      emoji = req.body.options.emoji || '⏰';
+      repeat = req.body.options.repeat || 0;
+    } else {
+      // Old format for backward compatibility
+      thread_id = req.body.thread_id;
+      title = req.body.title;
+      start_time = req.body.start_time;
+      type = req.body.type || 'user';
+      emoji = req.body.emoji || '⏰';
+      repeat = req.body.repeat || 0;
+    }
 
     // MULTI-SESSION: Get accountId from header if provided
     let accountId = req.headers['x-account-id'];
@@ -1464,7 +1483,30 @@ router.post('/send-video', verifyApiKey, async (req, res) => {
   try {
     console.log('📥 [zalo-service] POST /api/message/send-video received');
 
-    const { to, videoUrl, thumbnailUrl, type = 'user', msg, duration, width, height } = req.body;
+    // Support both old format (to, videoUrl) and new format (options, threadId)
+    let to, videoUrl, thumbnailUrl, type, msg, duration, width, height;
+    
+    if (req.body.options && req.body.threadId) {
+      // New format from Laravel
+      to = req.body.threadId;
+      videoUrl = req.body.options.videoUrl;
+      thumbnailUrl = req.body.options.thumbnailUrl;
+      msg = req.body.options.msg;
+      duration = req.body.options.duration;
+      width = req.body.options.width;
+      height = req.body.options.height;
+      type = req.body.type || 'user';
+    } else {
+      // Old format for backward compatibility
+      to = req.body.to;
+      videoUrl = req.body.videoUrl;
+      thumbnailUrl = req.body.thumbnailUrl;
+      msg = req.body.msg;
+      duration = req.body.duration;
+      width = req.body.width;
+      height = req.body.height;
+      type = req.body.type || 'user';
+    }
 
     // MULTI-SESSION: Get accountId from header if provided
     let accountId = req.headers['x-account-id'];
@@ -1548,7 +1590,22 @@ router.post('/send-voice', verifyApiKey, async (req, res) => {
   try {
     console.log('📥 [zalo-service] POST /api/message/send-voice received');
 
-    const { to, voiceUrl, type = 'user', ttl = 0 } = req.body;
+    // Support both old format (to, voiceUrl) and new format (options, threadId)
+    let to, voiceUrl, type, ttl;
+    
+    if (req.body.options && req.body.threadId) {
+      // New format from Laravel
+      to = req.body.threadId;
+      voiceUrl = req.body.options.voiceUrl;
+      type = req.body.type || 'user';
+      ttl = req.body.options.ttl || 0;
+    } else {
+      // Old format for backward compatibility
+      to = req.body.to;
+      voiceUrl = req.body.voiceUrl;
+      type = req.body.type || 'user';
+      ttl = req.body.ttl || 0;
+    }
 
     // MULTI-SESSION: Get accountId from header if provided
     let accountId = req.headers['x-account-id'];
