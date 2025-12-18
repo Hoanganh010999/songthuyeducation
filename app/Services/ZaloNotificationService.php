@@ -1465,13 +1465,13 @@ class ZaloNotificationService
     /**
      * Send video message to Zalo
      */
-    public function sendVideo(string $to, string $videoUrl, string $thumbnailUrl, string $type = 'user', ?int $accountId = null, ?string $msg = null, ?int $duration = null, ?int $width = null, ?int $height = null): array
+    public function sendVideo(string $to, string $videoSource, ?string $videoPath = null, ?string $msg = null, string $type = 'user', ?int $accountId = null): array
     {
         try {
             Log::info('[Zalo] Sending video', [
                 'to' => $to,
-                'video_url' => $videoUrl,
-                'thumbnail_url' => $thumbnailUrl,
+                'video_source' => $videoSource,
+                'has_video_path' => !empty($videoPath),
                 'type' => $type,
                 'accountId' => $accountId,
             ]);
@@ -1484,28 +1484,29 @@ class ZaloNotificationService
                 ];
             }
 
-            $requestPayload = [
-                'to' => $to,
-                'videoUrl' => $videoUrl,
-                'thumbnailUrl' => $thumbnailUrl,
-                'type' => $type,
-            ];
+            // Build options object - prefer videoPath over videoUrl
+            $options = [];
+            
+            if (!empty($videoPath) && file_exists($videoPath)) {
+                // Send absolute path for direct upload (MUCH FASTER)
+                $options['videoPath'] = $videoPath;
+                Log::info('[ZaloNotificationService] Using absolute video path', ['path' => substr($videoPath, 0, 100)]);
+            } else {
+                // Fallback to URL (will be downloaded by zalo-service)
+                $options['videoUrl'] = $videoSource;
+                Log::info('[ZaloNotificationService] Using video URL', ['url' => substr($videoSource, 0, 100)]);
+            }
 
             if ($msg) {
-                $requestPayload['msg'] = $msg;
+                $options['msg'] = $msg;
             }
 
-            if ($duration) {
-                $requestPayload['duration'] = $duration;
-            }
-
-            if ($width) {
-                $requestPayload['width'] = $width;
-            }
-
-            if ($height) {
-                $requestPayload['height'] = $height;
-            }
+            // New format: wrap in options, use threadId instead of to
+            $requestPayload = [
+                'options' => $options,
+                'threadId' => $to,
+                'type' => $type,
+            ];
 
             Log::info('[ZaloNotificationService] Sending video request to zalo-service', [
                 'url' => "{$this->baseUrl}/api/message/send-video",

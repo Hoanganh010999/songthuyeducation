@@ -1480,31 +1480,28 @@ router.get('/reminders', verifyApiKey, async (req, res) => {
  * Body: { to, videoUrl, thumbnailUrl, type, msg?, duration?, width?, height? }
  */
 router.post('/send-video', verifyApiKey, async (req, res) => {
+  let tempFilePath = null;
+  let isAbsolutePath = false;
+  
   try {
     console.log('📥 [zalo-service] POST /api/message/send-video received');
 
     // Support both old format (to, videoUrl) and new format (options, threadId)
-    let to, videoUrl, thumbnailUrl, type, msg, duration, width, height;
+    let to, videoUrl, videoPath, type, msg;
     
     if (req.body.options && req.body.threadId) {
       // New format from Laravel
       to = req.body.threadId;
       videoUrl = req.body.options.videoUrl;
-      thumbnailUrl = req.body.options.thumbnailUrl;
+      videoPath = req.body.options.videoPath; // NEW: absolute path
       msg = req.body.options.msg;
-      duration = req.body.options.duration;
-      width = req.body.options.width;
-      height = req.body.options.height;
       type = req.body.type || 'user';
     } else {
       // Old format for backward compatibility
       to = req.body.to;
       videoUrl = req.body.videoUrl;
-      thumbnailUrl = req.body.thumbnailUrl;
+      videoPath = req.body.videoPath;
       msg = req.body.msg;
-      duration = req.body.duration;
-      width = req.body.width;
-      height = req.body.height;
       type = req.body.type || 'user';
     }
 
@@ -1513,11 +1510,34 @@ router.post('/send-video', verifyApiKey, async (req, res) => {
     if (accountId) {
       accountId = parseInt(accountId);
     }
+    
+    // Prefer videoPath over videoUrl (direct upload)
+    const videoSource = videoPath || videoUrl;
+    
+    // Check if it's an absolute file path
+    if (videoPath && typeof videoPath === 'string') {
+      const isWindowsPath = /^[A-Za-z]:\\/.test(videoPath);
+      const isUnixPath = videoPath.startsWith('/');
+      
+      if (isWindowsPath || isUnixPath) {
+        isAbsolutePath = fs.existsSync(videoPath);
+      }
+    }
 
-    if (!to || !videoUrl || !thumbnailUrl) {
+    console.log('🎥 [zalo-service] Video send request:', {
+      to,
+      hasVideoUrl: !!videoUrl,
+      hasVideoPath: !!videoPath,
+      isAbsolutePath,
+      videoSource: videoSource?.substring(0, 100),
+      type,
+      hasMsg: !!msg,
+    });
+
+    if (!to || !videoSource) {
       return res.status(400).json({
         success: false,
-        message: 'Missing required fields: to, videoUrl, thumbnailUrl'
+        message: 'Missing required fields: to, videoUrl or videoPath'
       });
     }
 
@@ -1533,39 +1553,98 @@ router.post('/send-video', verifyApiKey, async (req, res) => {
 
     const threadType = type === 'group' ? ThreadType.Group : ThreadType.User;
 
-    console.log('🎥 [zalo-service] Sending video:', {
-      to,
-      videoUrl,
-      thumbnailUrl,
-      threadType: threadType === ThreadType.Group ? 'Group' : 'User',
-      hasMsg: !!msg,
-      duration,
-      width,
-      height,
-    });
-
-    const videoOptions = {
-      videoUrl,
-      thumbnailUrl,
+    // Get final video path (either absolute path or download from URL)
+    let finalVideoPath;
+    
+    if (isAbsolutePath) {
+      // Use absolute path directly - MUCH FASTER
+      finalVideoPath = videoPath;
+      console.log('✅ [zalo-service] Using absolute video path directly:', finalVideoPath.substring(0, 100));
+    } else {
+      // Download from URL to temporary file
+      console.log('📥 [zalo-service] Downloading video from URL...');
+      
+      const tempDir = path.join(__dirname, '../temp');
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+      
+      let ext = '.mp4'; // Default extension
+      try {
+        const urlPath = new URL(videoSource).pathname;
+        const extractedExt = path.extname(urlPath);
+        if (extractedExt && ['.mp4', '.mov', '.avi', '.wmv', '.webm', '.mkv'].includes(extractedExt.toLowerCase())) {
+          ext = extractedExt;
+        }
+      } catch (e) {
+        console.warn('⚠️  Failed to extract extension from URL, using .mp4');
+      }
+      
+      const fileName = `video_${Date.now()}_${Math.random().toString(36).substring(7)}${ext}`;
+      tempFilePath = path.join(tempDir, fileName);
+      
+      const response = await axios.get(videoSource, { responseType: 'arraybuffer', timeout: 120000 }); // 2 min timeout
+      await fs.promises.writeFile(tempFilePath, response.data);
+      
+      finalVideoPath = tempFilePath;
+      console.log('✅ [zalo-service] Video downloaded to:', finalVideoPath);
+    }
+    
+    // IMPORTANT: Send video as attachment - zalo-api-final will auto-upload to Zalo CDN
+    const messageContent = {
+      msg: msg || '',
+      attachments: [finalVideoPath]
     };
+    
+    console.log('📤 [zalo-service] Sending video (zalo-api-final will auto-upload)...');
+    const result = await zalo.sendMessage(messageContent, to, threadType);
 
-    if (msg) videoOptions.msg = msg;
-    if (duration) videoOptions.duration = duration;
-    if (width) videoOptions.width = width;
-    if (height) videoOptions.height = height;
+    // Record outgoing message
+    recordOutgoingMessage(accountId);
 
-    const result = await zalo.sendVideo(videoOptions, to, threadType);
+    // Extract message IDs from result
+    const msgId = result?.message?.msgId?.toString() || Date.now().toString();
+    const cliMsgId = result?.message?.cliMsgId?.toString() || null;
+    const globalMsgId = result?.message?.globalMsgId?.toString() || msgId;
+    
+    // Extract Zalo CDN URL from attachment
+    const uploadedCdnUrl = result?.attachment?.[0]?.fileUrl || result?.attachment?.[0]?.normalUrl || null;
+    const fileId = result?.attachment?.[0]?.fileId || null;
 
     console.log('✅ [zalo-service] Video sent successfully:', {
-      hasResult: !!result,
-      msgId: result?.msgId,
+      msgId,
+      cliMsgId,
+      globalMsgId,
+      uploadedCdnUrl: uploadedCdnUrl ? uploadedCdnUrl.substring(0, 80) + '...' : null,
+      fileId,
     });
+
+    // Clean up temp file (only if we downloaded it)
+    if (!isAbsolutePath && tempFilePath && fs.existsSync(tempFilePath)) {
+      try {
+        await unlink(tempFilePath);
+        console.log('🧹 [zalo-service] Temporary video file deleted:', tempFilePath);
+      } catch (cleanupError) {
+        console.warn('⚠️  Failed to delete temp video file:', cleanupError.message);
+      }
+    }
 
     res.json({
       success: true,
       message: 'Video sent successfully',
       data: {
-        msgId: result?.msgId,
+        message_id: msgId,
+        cli_msg_id: cliMsgId,
+        global_msg_id: globalMsgId,
+        all_message_ids: {
+          msgId,
+          cliMsgId,
+          globalMsgId,
+        },
+        zalo_cdn_url: uploadedCdnUrl,
+        local_url: videoSource,
+        media_url: uploadedCdnUrl || videoSource,
+        file_id: fileId,
         ...result
       }
     });
@@ -1574,6 +1653,17 @@ router.post('/send-video', verifyApiKey, async (req, res) => {
       message: error.message,
       stack: error.stack,
     });
+    
+    // Clean up temp file on error
+    if (!isAbsolutePath && tempFilePath && fs.existsSync(tempFilePath)) {
+      try {
+        await unlink(tempFilePath);
+        console.log('🧹 [zalo-service] Temporary video file deleted after error:', tempFilePath);
+      } catch (cleanupError) {
+        console.warn('⚠️  Failed to delete temp video file after error:', cleanupError.message);
+      }
+    }
+    
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to send video'

@@ -3653,24 +3653,34 @@ class ZaloController extends Controller
                     'has_message_id' => !empty($messageId),
                 ]);
             } elseif ($contentType === 'video' && ($mediaUrl || $mediaPath)) {
-                // Send video using Zalo's sendVideo API
-                $videoUrl = $mediaUrl ?: asset('storage/' . $mediaPath);
-                $thumbnailUrl = $videoUrl; // Use video URL as thumbnail fallback
+                // Send video using direct file upload (NO NEED for thumbnail!)
+                $videoSource = $mediaUrl ?: asset('storage/' . $mediaPath);
+                
+                // Get absolute path if mediaPath is provided (for direct upload - MUCH FASTER)
+                $absolutePath = null;
+                if ($mediaPath) {
+                    $absolutePath = storage_path('app/public/' . $mediaPath);
+                    if (!file_exists($absolutePath)) {
+                        Log::warning('[ZaloController] Video absolute path does not exist', ['path' => $absolutePath]);
+                        $absolutePath = null;
+                    }
+                }
                 
                 Log::info('[ZaloController] Sending video message', [
                     'recipient_id' => $recipientId,
                     'recipient_type' => $recipientType,
-                    'video_url' => $videoUrl,
-                    'thumbnail_url' => $thumbnailUrl,
+                    'video_source' => $videoSource,
+                    'has_absolute_path' => !empty($absolutePath),
+                    'absolute_path' => $absolutePath ? substr($absolutePath, 0, 100) . '...' : null,
                 ]);
                 
                 $result = $this->zalo->sendVideo(
                     $recipientId,
-                    $videoUrl,
-                    $thumbnailUrl,
+                    $videoSource,  // URL (fallback)
+                    $absolutePath, // Absolute path (preferred)
+                    $message,      // Optional message
                     $recipientType,
-                    $accountId,
-                    $message
+                    $accountId
                 );
                 
                 Log::info('[ZaloController] ZaloNotificationService::sendVideo response', [
