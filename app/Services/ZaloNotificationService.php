@@ -1385,12 +1385,14 @@ class ZaloNotificationService
             }
 
             $requestPayload = [
-                'to' => $threadId,
-                'title' => $title,
-                'startTime' => $startTime,
+                'options' => [
+                    'title' => $title,
+                    'startTime' => $startTime,
+                    'emoji' => $emoji ?? '📚',
+                    'repeat' => $repeat,
+                ],
+                'threadId' => $threadId,
                 'type' => $type,
-                'emoji' => $emoji ?? '📚',
-                'repeat' => $repeat,
             ];
 
             Log::info('[ZaloNotificationService] Sending create-reminder request to zalo-service', [

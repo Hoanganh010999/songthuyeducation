@@ -3680,13 +3680,15 @@ class ZaloController extends Controller
                     'full_result' => $result,
                 ]);
                 
-                // Extract message_id from response
-                $messageId = $result['data']['msgId'] ?? null;
+                // Extract message_id and cli_msg_id from response
+                $messageId = $result['data']['msgId'] ?? $result['data']['message_id'] ?? null;
+                $cliMsgId = $result['data']['cli_msg_id'] ?? null;
                 
                 $finalContentType = 'video';
                 
-                Log::info('[ZaloController] Extracted message ID from sendVideo response', [
+                Log::info('[ZaloController] Extracted message IDs from sendVideo response', [
                     'message_id' => $messageId,
+                    'cli_msg_id' => $cliMsgId,
                     'has_message_id' => !empty($messageId),
                 ]);
             } elseif ($contentType === 'audio' && ($mediaUrl || $mediaPath)) {
@@ -3713,13 +3715,15 @@ class ZaloController extends Controller
                     'full_result' => $result,
                 ]);
                 
-                // Extract message_id from response
-                $messageId = $result['data']['msgId'] ?? null;
+                // Extract message_id and cli_msg_id from response
+                $messageId = $result['data']['msgId'] ?? $result['data']['message_id'] ?? null;
+                $cliMsgId = $result['data']['cli_msg_id'] ?? null;
                 
                 $finalContentType = 'audio';
                 
-                Log::info('[ZaloController] Extracted message ID from sendVoice response', [
+                Log::info('[ZaloController] Extracted message IDs from sendVoice response', [
                     'message_id' => $messageId,
+                    'cli_msg_id' => $cliMsgId,
                     'has_message_id' => !empty($messageId),
                 ]);
             } elseif ($contentType === 'sticker' && $stickerData) {
