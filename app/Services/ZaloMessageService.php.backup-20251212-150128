@@ -1,0 +1,699 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\ZaloAccount;
+use App\Models\ZaloMessage;
+use Illuminate\Support\Facades\Log;
+
+class ZaloMessageService
+{
+    /**
+     * Save sent message to database
+     */
+    public function saveSentMessage(
+        ZaloAccount $account,
+        string $recipientId,
+        string $recipientName,
+        string $content,
+        string $recipientType = 'user',
+        ?string $messageId = null,
+        ?string $mediaUrl = null,
+        ?string $mediaPath = null,
+        string $contentType = 'text',
+        ?string $cliMsgId = null,
+        ?array $allMessageIds = null,
+        ?array $stickerData = null,
+        ?array $styles = null // Rich text styles
+    ): ZaloMessage {
+        try {
+            // Ensure content is always a string (never null)
+            $content = $content ?? '';
+            
+            // 🎨 Extract styles from rich text message JSON format (for sent messages)
+            // Format: {"title":"text","action":"rtf","params":"{\"styles\":[...]}"}
+            if (!$styles && $contentType === 'text' && !empty($content)) {
+                $contentJson = json_decode($content, true);
+                if ($contentJson && isset($contentJson['action']) && $contentJson['action'] === 'rtf' && isset($contentJson['params'])) {
+                    try {
+                        $params = is_string($contentJson['params']) 
+                            ? json_decode($contentJson['params'], true) 
+                            : $contentJson['params'];
+                        
+                        if ($params && isset($params['styles']) && is_array($params['styles'])) {
+                            // Convert zalo-api-final style format to our format
+                            $styles = [];
+                            foreach ($params['styles'] as $style) {
+                                $converted = [
+                                    'start' => $style['start'] ?? 0,
+                                    'len' => $style['len'] ?? 0  // 🔥 KEEP len, DON'T convert to end
+                                ];
+
+                                // Map style type
+                                $st = $style['st'] ?? '';
+                                if ($st === 'lst_1' || $st === 'UnorderedList') {
+                                    $converted['unorderedList'] = true;
+                                } elseif ($st === 'lst_2' || $st === 'OrderedList') {
+                                    $converted['orderedList'] = true;
+                                } elseif ($st === 'Bold' || $st === 'bold') {
+                                    $converted['bold'] = true;
+                                } elseif ($st === 'Italic' || $st === 'italic') {
+                                    $converted['italic'] = true;
+                                } elseif ($st === 'Underline' || $st === 'underline') {
+                                    $converted['underline'] = true;
+                                } elseif ($st === 'Red' || $st === 'red') {
+                                    $converted['color'] = 'c_db342e';
+                                } elseif ($st === 'Orange' || $st === 'orange') {
+                                    $converted['color'] = 'c_f27806';
+                                } elseif ($st === 'Yellow' || $st === 'yellow') {
+                                    $converted['color'] = 'c_f7b503';
+                                } elseif ($st === 'Green' || $st === 'green') {
+                                    $converted['color'] = 'c_15a85f';
+                                }
+
+                                $styles[] = $converted;
+                            }
+                            
+                            // Extract plain text from title
+                            if (isset($contentJson['title'])) {
+                                $content = $contentJson['title'];
+                            }
+                            
+                            Log::info('[ZaloMessageService] Extracted styles from sent rich text message', [
+                                'styles_count' => count($styles),
+                                'has_unordered_list' => !empty(array_filter($styles, fn($s) => !empty($s['unorderedList']))),
+                            ]);
+                        }
+                    } catch (\Exception $e) {
+                        Log::warning('[ZaloMessageService] Failed to extract styles from sent rich text message', [
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+            }
+            
+            // 🎨 Detect if content is sticker JSON format
+            if ($contentType === 'text' && !empty($content)) {
+                $decoded = json_decode($content, true);
+                if (is_array($decoded) && isset($decoded['id']) && isset($decoded['catId']) && isset($decoded['type'])) {
+                    // This is a sticker sent as text - convert it
+                    $contentType = 'sticker';
+                    $stickerId = $decoded['id'];
+
+                    // Generate sticker URL for display
+                    $stickerWebpUrl = "https://zalo-api.zadn.vn/api/emoticon/sticker/webpc?eid={$stickerId}&size=130";
+
+                    $stickerData = [
+                        'id' => $stickerId,
+                        'cateId' => $decoded['catId'],
+                        'type' => $decoded['type'],
+                        'stickerWebpUrl' => $stickerWebpUrl,
+                        'text' => $decoded['text'] ?? '',
+                    ];
+                    $content = '[Sticker]';
+
+                    Log::info('[ZaloMessageService] Detected sticker JSON in text content, converting to sticker', [
+                        'sticker_id' => $stickerData['id'],
+                        'cate_id' => $stickerData['cateId'],
+                        'sticker_url' => $stickerWebpUrl,
+                    ]);
+                }
+            }
+
+            Log::info('[ZaloMessageService] Saving sent message', [
+                'account_id' => $account->id,
+                'recipient_id' => $recipientId,
+                'recipient_name' => $recipientName,
+                'recipient_type' => $recipientType,
+                'content_length' => strlen($content),
+                'content_type' => $contentType,
+                'has_message_id' => !empty($messageId),
+                'has_media_url' => !empty($mediaUrl),
+                'has_sticker_data' => !empty($stickerData),
+            ]);
+
+            // Store metadata with all message IDs for accurate finding
+            $metadata = [
+                'msgId' => $messageId,
+                'cliMsgId' => $cliMsgId ?? $messageId, // Include cliMsgId if provided
+                'globalMsgId' => $allMessageIds['globalMsgId'] ?? $messageId,
+                'realMsgId' => $allMessageIds['realMsgId'] ?? $messageId,
+                'ts' => time(),
+            ];
+
+            // 🎨 Add styles to metadata if provided
+            if ($styles && is_array($styles) && count($styles) > 0) {
+                $metadata['styles'] = $styles;
+                Log::info('[ZaloMessageService] Adding styles to sent message metadata', [
+                    'styles_count' => count($styles),
+                    'has_unordered_list' => !empty(array_filter($styles, fn($s) => !empty($s['unorderedList']))),
+                    'has_ordered_list' => !empty(array_filter($styles, fn($s) => !empty($s['orderedList']))),
+                ]);
+            }
+            
+            // 🎨 Add sticker data to metadata if provided
+            if ($stickerData) {
+                // Ensure sticker URL exists for display
+                if (isset($stickerData['id']) && !isset($stickerData['stickerWebpUrl'])) {
+                    $stickerData['stickerWebpUrl'] = "https://zalo-api.zadn.vn/api/emoticon/sticker/webpc?eid={$stickerData['id']}&size=130";
+                }
+                $metadata['sticker'] = $stickerData;
+
+                // FIX: Set media_url from sticker URL if not already set
+                if (empty($mediaUrl)) {
+                    $mediaUrl = $stickerData['stickerUrl'] ?? $stickerData['stickerWebpUrl'] ?? null;
+                }
+            }
+            
+            // Merge all message IDs from request if provided
+            if (!empty($allMessageIds)) {
+                $metadata = array_merge($metadata, [
+                    'msgId' => $allMessageIds['msgId'] ?? $messageId,
+                    'cliMsgId' => $allMessageIds['cliMsgId'] ?? $cliMsgId ?? $messageId,
+                    'globalMsgId' => $allMessageIds['globalMsgId'] ?? $messageId,
+                    'realMsgId' => $allMessageIds['realMsgId'] ?? $messageId,
+                ]);
+            }
+            
+            // Use updateOrCreate to handle duplicate messages (if WebSocket also receives it)
+            $message = ZaloMessage::updateOrCreate(
+                [
+                    'zalo_account_id' => $account->id,
+                    'message_id' => $messageId ?? null, // Can be null initially
+                ],
+                [
+                    'type' => 'sent',
+                    'recipient_type' => $recipientType,
+                    'recipient_id' => $recipientId,
+                    'recipient_name' => $recipientName,
+                    'content' => $content,
+                    'content_type' => $contentType,
+                    'media_url' => $mediaUrl,
+                    'media_path' => $mediaPath,
+                    'status' => 'sent',
+                    'sent_at' => now(),
+                    'metadata' => $metadata,
+                ]
+            );
+            
+            // If message_id was null, update it after creation
+            if (!$message->message_id && $messageId) {
+                $message->message_id = $messageId;
+                $message->save();
+            }
+
+            Log::info('[ZaloMessageService] Sent message saved successfully', [
+                'db_id' => $message->id,
+                'zalo_account_id' => $message->zalo_account_id,
+                'message_id' => $message->message_id,
+                'metadata' => $message->metadata,
+                'recipient_id' => $message->recipient_id,
+            ]);
+
+            // 🎯 Auto-record sticker usage for recent stickers list
+            if ($contentType === 'sticker' && $stickerData) {
+                try {
+                    \App\Models\ZaloRecentSticker::recordUsage($account->id, $stickerData);
+                    Log::info('[ZaloMessageService] Auto-recorded recent sticker', [
+                        'account_id' => $account->id,
+                        'sticker_id' => $stickerData['id'] ?? $stickerData['stickerId'] ?? null,
+                    ]);
+                } catch (\Exception $e) {
+                    Log::warning('[ZaloMessageService] Failed to record recent sticker', [
+                        'account_id' => $account->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
+            return $message;
+        } catch (\Exception $e) {
+            Log::error('[ZaloMessageService] Failed to save message', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'account_id' => $account->id,
+                'recipient_id' => $recipientId,
+                'recipient_type' => $recipientType,
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Save received message to database
+     */
+    public function saveReceivedMessage(
+        ZaloAccount $account,
+        string $senderId,
+        string $senderName,
+        ?string $content = null,
+        string $recipientType = 'user',
+        ?string $messageId = null,
+        ?string $mediaUrl = null,
+        ?string $mediaPath = null,
+        string $contentType = 'text',
+        ?string $cliMsgId = null,
+        ?array $quote = null,
+        ?array $allMessageIds = null,
+        ?string $globalMsgId = null,
+        ?string $realMsgId = null,
+        ?string $sentAt = null,
+        ?string $actualSenderId = null, // Actual sender ID (for group messages)
+        ?string $actualSenderName = null, // Actual sender name (for group messages)
+        ?array $stickerData = null, // Sticker metadata (for sticker messages)
+        ?array $fileData = null, // File metadata (for file messages)
+        ?array $styles = null, // Rich text styles array
+        ?string $recipientId = null // 🔥 FIX: Add recipient ID parameter (group ID for group messages)
+    ): ZaloMessage {
+        // Find original message if this is a reply
+        $replyToMessageId = null;
+        $replyToZaloMessageId = null;
+        $replyToCliMsgId = null;
+        
+        if ($quote) {
+            // Try to find the original message being replied to
+            // Quote can contain: globalMsgId, msgId, cliMsgId
+            // We need to search in both message_id column and metadata JSON
+            $originalMessage = null;
+            
+            // Strategy 1: Search by message_id column (most common)
+            $searchIds = [];
+            if (isset($quote['globalMsgId']) && !empty($quote['globalMsgId'])) {
+                $searchIds[] = $quote['globalMsgId'];
+            }
+            if (isset($quote['msgId']) && !empty($quote['msgId'])) {
+                $searchIds[] = $quote['msgId'];
+            }
+            if (isset($quote['cliMsgId']) && !empty($quote['cliMsgId'])) {
+                $searchIds[] = $quote['cliMsgId'];
+            }
+            
+            if (!empty($searchIds)) {
+                $originalMessage = ZaloMessage::where('zalo_account_id', $account->id)
+                    ->whereIn('message_id', array_unique($searchIds))
+                    ->first();
+            }
+            
+            // Strategy 2: If not found, search in metadata JSON fields
+            if (!$originalMessage && !empty($searchIds)) {
+                foreach (array_unique($searchIds) as $searchId) {
+                    $originalMessage = ZaloMessage::where('zalo_account_id', $account->id)
+                        ->where(function($q) use ($searchId) {
+                            $q->whereJsonContains('metadata->msgId', $searchId)
+                              ->orWhereJsonContains('metadata->globalMsgId', $searchId)
+                              ->orWhereJsonContains('metadata->cliMsgId', $searchId)
+                              ->orWhereJsonContains('metadata->realMsgId', $searchId);
+                        })
+                        ->first();
+                    
+                    if ($originalMessage) {
+                        break;
+                    }
+                }
+            }
+            
+            // Strategy 3: Search by cliMsgId in metadata if still not found
+            if (!$originalMessage && isset($quote['cliMsgId']) && !empty($quote['cliMsgId'])) {
+                $originalMessage = ZaloMessage::where('zalo_account_id', $account->id)
+                    ->whereJsonContains('metadata->cliMsgId', $quote['cliMsgId'])
+                    ->first();
+            }
+            
+            if ($originalMessage) {
+                $replyToMessageId = $originalMessage->id;
+                $replyToZaloMessageId = $originalMessage->message_id;
+                $replyToCliMsgId = $quote['cliMsgId'] ?? $quote['globalMsgId'] ?? $quote['msgId'] ?? null;
+                
+                Log::info('[ZaloMessageService] Found original message for reply', [
+                    'original_message_id' => $originalMessage->id,
+                    'original_zalo_message_id' => $originalMessage->message_id,
+                    'quote_globalMsgId' => $quote['globalMsgId'] ?? null,
+                    'quote_msgId' => $quote['msgId'] ?? null,
+                    'quote_cliMsgId' => $quote['cliMsgId'] ?? null,
+                ]);
+            } else {
+                Log::warning('[ZaloMessageService] Original message not found for reply', [
+                    'account_id' => $account->id,
+                    'quote_globalMsgId' => $quote['globalMsgId'] ?? null,
+                    'quote_msgId' => $quote['msgId'] ?? null,
+                    'quote_cliMsgId' => $quote['cliMsgId'] ?? null,
+                    'quote_keys' => array_keys($quote),
+                ]);
+            }
+        }
+        
+        // Ensure content is always a string (never null)
+        $content = $content ?? '';
+        
+        // 🎨 Extract styles from rich text message JSON format
+        // Format: {"title":"text","action":"rtf","params":"{\"styles\":[...]}"}
+        if (!$styles && $contentType === 'text' && !empty($content)) {
+            $contentJson = json_decode($content, true);
+            if ($contentJson && isset($contentJson['action']) && $contentJson['action'] === 'rtf' && isset($contentJson['params'])) {
+                try {
+                    $params = is_string($contentJson['params']) 
+                        ? json_decode($contentJson['params'], true) 
+                        : $contentJson['params'];
+                    
+                    if ($params && isset($params['styles']) && is_array($params['styles'])) {
+                        // Convert zalo-api-final style format to our format
+                        $styles = [];
+                        foreach ($params['styles'] as $style) {
+                            $converted = [
+                                'start' => $style['start'] ?? 0,
+                                'len' => $style['len'] ?? 0  // 🔥 KEEP len, DON'T convert to end
+                            ];
+
+                            // Map style type
+                            $st = $style['st'] ?? '';
+                            if ($st === 'lst_1' || $st === 'UnorderedList') {
+                                $converted['unorderedList'] = true;
+                            } elseif ($st === 'lst_2' || $st === 'OrderedList') {
+                                $converted['orderedList'] = true;
+                            } elseif ($st === 'Bold' || $st === 'bold') {
+                                $converted['bold'] = true;
+                            } elseif ($st === 'Italic' || $st === 'italic') {
+                                $converted['italic'] = true;
+                            } elseif ($st === 'Underline' || $st === 'underline') {
+                                $converted['underline'] = true;
+                            } elseif ($st === 'Red' || $st === 'red') {
+                                $converted['color'] = 'c_db342e';
+                            } elseif ($st === 'Orange' || $st === 'orange') {
+                                $converted['color'] = 'c_f27806';
+                            } elseif ($st === 'Yellow' || $st === 'yellow') {
+                                $converted['color'] = 'c_f7b503';
+                            } elseif ($st === 'Green' || $st === 'green') {
+                                $converted['color'] = 'c_15a85f';
+                            }
+
+                            $styles[] = $converted;
+                        }
+                        
+                        // Extract plain text from title
+                        if (isset($contentJson['title'])) {
+                            $content = $contentJson['title'];
+                        }
+                        
+                        Log::info('[ZaloMessageService] Extracted styles from rich text message', [
+                            'styles_count' => count($styles),
+                            'has_unordered_list' => !empty(array_filter($styles, fn($s) => !empty($s['unorderedList']))),
+                        ]);
+                    }
+                } catch (\Exception $e) {
+                    Log::warning('[ZaloMessageService] Failed to extract styles from rich text message', [
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
+
+        // 🎨 Detect if content is sticker JSON format (same as saveSentMessage)
+        if ($contentType === 'text' && !empty($content)) {
+            $decoded = json_decode($content, true);
+            if (is_array($decoded) && isset($decoded['id']) && isset($decoded['catId']) && isset($decoded['type'])) {
+                // This is a sticker sent as text - convert it
+                $contentType = 'sticker';
+                $stickerId = $decoded['id'];
+
+                // Generate sticker URL for display
+                $stickerWebpUrl = "https://zalo-api.zadn.vn/api/emoticon/sticker/webpc?eid={$stickerId}&size=130";
+
+                $stickerData = [
+                    'id' => $stickerId,
+                    'cateId' => $decoded['catId'],
+                    'type' => $decoded['type'],
+                    'stickerWebpUrl' => $stickerWebpUrl,
+                    'text' => $decoded['text'] ?? '',
+                ];
+                $content = '[Sticker]';
+
+                Log::info('[ZaloMessageService] Detected sticker JSON in received text content, converting to sticker', [
+                    'sticker_id' => $stickerData['id'],
+                    'cate_id' => $stickerData['cateId'],
+                    'sticker_url' => $stickerWebpUrl,
+                ]);
+            }
+        }
+
+        // Store all Zalo message IDs for accurate finding
+        $metadata = [
+            'cliMsgId' => $cliMsgId ?? $messageId,
+            'msgId' => $messageId, // Original msgId from Zalo
+            'globalMsgId' => $globalMsgId ?? $messageId, // Alias for compatibility
+            'realMsgId' => $realMsgId ?? $messageId, // Another alias
+            'ts' => $sentAt ? (is_numeric($sentAt) ? $sentAt : strtotime($sentAt)) : time(),
+        ];
+        
+        // Merge all message IDs from request if provided
+        if (!empty($allMessageIds)) {
+            $metadata = array_merge($metadata, [
+                'msgId' => $allMessageIds['msgId'] ?? $messageId,
+                'globalMsgId' => $allMessageIds['globalMsgId'] ?? $globalMsgId ?? $messageId,
+                'realMsgId' => $allMessageIds['realMsgId'] ?? $realMsgId ?? $messageId,
+                'cliMsgId' => $allMessageIds['cliMsgId'] ?? $cliMsgId ?? $messageId,
+            ]);
+        }
+        
+        if ($quote) {
+            $metadata['quote'] = $quote;
+            $metadata['msgType'] = $quote['cliMsgType'] ?? $quote['msgType'] ?? 'text';
+        }
+
+        // 🎨 Add sticker data to metadata if provided
+        if ($stickerData) {
+            // Ensure sticker URL exists for display
+            if (isset($stickerData['id']) && !isset($stickerData['stickerWebpUrl'])) {
+                $stickerData['stickerWebpUrl'] = "https://zalo-api.zadn.vn/api/emoticon/sticker/webpc?eid={$stickerData['id']}&size=130";
+            }
+            $metadata['sticker'] = $stickerData;
+
+            // FIX: Set media_url from sticker URL if not already set
+            if (empty($mediaUrl)) {
+                $mediaUrl = $stickerData['stickerUrl'] ?? $stickerData['stickerWebpUrl'] ?? null;
+            }
+        }
+
+        // 📁 Add file data to metadata if provided
+        if ($fileData) {
+            $metadata['file'] = $fileData;
+        }
+        
+        // 🎨 Add styles to metadata if provided
+        if ($styles && is_array($styles) && count($styles) > 0) {
+            $metadata['styles'] = $styles;
+        }
+
+        // 🔥 FIX: For group messages, use recipientId (group ID) not senderId
+        $actualRecipientId = $recipientId ?? $senderId;
+        $actualRecipientName = $recipientType === 'group' ? null : $senderName; // For groups, name will be fetched from ZaloGroup
+        
+        Log::info('[ZaloMessageService] Saving received message with IDs', [
+            'account_id' => $account->id,
+            'message_id' => $messageId,
+            'cliMsgId' => $cliMsgId,
+            'globalMsgId' => $globalMsgId ?? $messageId,
+            'realMsgId' => $realMsgId ?? $messageId,
+            'metadata_cliMsgId' => $metadata['cliMsgId'],
+            'all_message_ids' => $allMessageIds ?? null,
+            'recipient_id' => $actualRecipientId,
+            'recipient_type' => $recipientType,
+            'sender_id' => $senderId,
+        ]);
+        
+        // For updateOrCreate, prioritize messageId, fallback to cliMsgId if messageId is null
+        // This ensures we can find the message later even if messageId is null
+        $uniqueMessageId = $messageId ?? $cliMsgId ?? null;
+        
+        if (!$uniqueMessageId) {
+            // If no ID at all, log warning but still create message
+            Log::warning('[ZaloMessageService] No message ID or cliMsgId provided, creating new message without unique key', [
+                'account_id' => $account->id,
+                'recipient_id' => $senderId,
+            ]);
+        }
+        
+        // 🔧 FIX: Use Laravel's now() timestamp for accuracy
+        // Zalo's timestamp can be off by 1-2 minutes due to server processing delays
+        // Always use now() to ensure messages are ordered by when they were actually received
+        $zaloTimestamp = now();
+
+        $savedMessage = ZaloMessage::updateOrCreate(
+            [
+                'zalo_account_id' => $account->id,
+                'message_id' => $uniqueMessageId, // Use messageId or cliMsgId as fallback
+            ],
+            [
+                'type' => 'received',
+                'recipient_type' => $recipientType,
+                'recipient_id' => $actualRecipientId, // 🔥 FIX: Use group ID for groups, sender ID for users
+                'recipient_name' => $actualRecipientName, // 🔥 FIX: Null for groups (will be fetched)
+                'sender_id' => $actualSenderId ?? $senderId, // Actual sender ID
+                'sender_name' => $actualSenderName ?? $senderName, // Actual sender name
+                'content' => $content,
+                'content_type' => $contentType,
+                'media_url' => $mediaUrl,
+                'media_path' => $mediaPath,
+                'status' => 'delivered',
+                'sent_at' => $zaloTimestamp,
+                'delivered_at' => $zaloTimestamp, // Use Zalo timestamp instead of now()
+                'reply_to_message_id' => $replyToMessageId,
+                'reply_to_zalo_message_id' => $replyToZaloMessageId,
+                'reply_to_cli_msg_id' => $replyToCliMsgId,
+                'quote_data' => $quote,
+                'metadata' => $metadata,
+                'created_at' => $zaloTimestamp, // 🔥 CRITICAL: Set created_at to Zalo timestamp
+                'updated_at' => $zaloTimestamp, // Also set updated_at to match
+            ]
+        );
+        
+        Log::info('[ZaloMessageService] Message saved successfully', [
+            'db_id' => $savedMessage->id,
+            'message_id' => $savedMessage->message_id,
+            'metadata_cliMsgId' => $savedMessage->metadata['cliMsgId'] ?? null,
+            'recipient_id' => $savedMessage->recipient_id,
+        ]);
+
+        // 🔥 PREVENTION: Auto-sync group member if not in database
+        // This ensures member avatars and info are always available
+        if ($recipientType === 'group' && $actualSenderId) {
+            $this->ensureGroupMemberExists($account, $senderId, $actualSenderId, $actualSenderName);
+        }
+
+        return $savedMessage;
+    }
+
+    /**
+     * Get chat history
+     */
+    public function getChatHistory(
+        ZaloAccount $account,
+        string $recipientId,
+        int $perPage = 50,
+        ?string $beforeDate = null
+    ) {
+        $query = ZaloMessage::where('zalo_account_id', $account->id)
+            ->where('recipient_id', $recipientId)
+            ->orderBy('sent_at', 'desc');
+
+        if ($beforeDate) {
+            $query->where('sent_at', '<', $beforeDate);
+        }
+
+        return $query->paginate($perPage);
+    }
+
+    /**
+     * Update message status
+     */
+    public function updateMessageStatus(ZaloMessage $message, string $status, ?\DateTime $timestamp = null): void
+    {
+        $updateData = ['status' => $status];
+
+        if ($status === 'delivered' && !$message->delivered_at) {
+            $updateData['delivered_at'] = $timestamp ?? now();
+        } elseif ($status === 'read' && !$message->read_at) {
+            $updateData['read_at'] = $timestamp ?? now();
+        }
+
+        $message->update($updateData);
+    }
+
+    /**
+     * Ensure group member exists in database
+     * If not, fetch from Zalo API and save
+     * This prevents missing member avatars and info in group conversations
+     */
+    private function ensureGroupMemberExists(
+        ZaloAccount $account,
+        string $groupId,
+        string $userId,
+        ?string $userName = null
+    ): void {
+        try {
+            // First, check if the group exists
+            $group = \App\Models\ZaloGroup::where('zalo_account_id', $account->id)
+                ->where('zalo_group_id', $groupId)
+                ->first();
+
+            if (!$group) {
+                Log::warning('[ZaloMessageService] Group not found, creating placeholder', [
+                    'account_id' => $account->id,
+                    'group_id' => $groupId,
+                ]);
+
+                // Create placeholder group - it will be updated later
+                $group = \App\Models\ZaloGroup::create([
+                    'zalo_account_id' => $account->id,
+                    'zalo_group_id' => $groupId,
+                    'name' => 'Unknown',
+                ]);
+            }
+
+            // Check if member already exists
+            $memberExists = \App\Models\ZaloGroupMember::where('zalo_group_id', $group->id)
+                ->where('zalo_user_id', $userId)
+                ->exists();
+
+            if ($memberExists) {
+                // Member already in database, no need to sync
+                return;
+            }
+
+            Log::info('[ZaloMessageService] Member not in database, fetching from API', [
+                'group_id' => $groupId,
+                'user_id' => $userId,
+                'user_name' => $userName,
+            ]);
+
+            // Fetch member info from Zalo API
+            $response = \Illuminate\Support\Facades\Http::timeout(10)->withHeaders([
+                'X-API-Key' => config('services.zalo.api_key'),
+            ])->get(config('services.zalo.base_url') . '/api/user/info/' . $userId, [
+                'accountId' => $account->id,
+            ]);
+
+            if ($response->successful() && $response->json('success')) {
+                $userData = $response->json('data');
+
+                \App\Models\ZaloGroupMember::create([
+                    'zalo_group_id' => $group->id,
+                    'zalo_user_id' => $userId,
+                    'display_name' => $userData['display_name'] ?? $userName ?? 'Unknown',
+                    'avatar_url' => $userData['avatar_url'] ?? $userData['avatar'] ?? null,
+                    'is_admin' => false, // Will be updated if admin
+                ]);
+
+                Log::info('[ZaloMessageService] Successfully synced member from API', [
+                    'group_id' => $groupId,
+                    'user_id' => $userId,
+                    'display_name' => $userData['display_name'] ?? $userName,
+                    'has_avatar' => !empty($userData['avatar_url'] ?? $userData['avatar']),
+                ]);
+            } else {
+                // API failed, create with basic info
+                Log::warning('[ZaloMessageService] Failed to fetch member from API, creating with basic info', [
+                    'group_id' => $groupId,
+                    'user_id' => $userId,
+                    'user_name' => $userName,
+                    'api_message' => $response->json('message'),
+                ]);
+
+                \App\Models\ZaloGroupMember::create([
+                    'zalo_group_id' => $group->id,
+                    'zalo_user_id' => $userId,
+                    'display_name' => $userName ?? 'Unknown',
+                    'avatar_url' => null,
+                    'is_admin' => false,
+                ]);
+            }
+        } catch (\Exception $e) {
+            // Don't fail the message save if member sync fails
+            Log::error('[ZaloMessageService] Failed to ensure group member exists', [
+                'error' => $e->getMessage(),
+                'group_id' => $groupId,
+                'user_id' => $userId,
+            ]);
+        }
+    }
+}
+

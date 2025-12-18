@@ -1,0 +1,1850 @@
+/**
+ * ZALO CLIENT - MULTI-SESSION ARCHITECTURE
+ *
+ * Supports multiple Zalo accounts connected simultaneously
+ * Each account has its own session stored in a Map
+ *
+ * Architecture:
+ * - sessions: Map<accountId, Zalo API instance>
+ * - activeAccountId: Currently active account ID
+ * - sessionData: Map<accountId, {isInitialized, loginCompleted, wsListener, keepAliveInterval}>
+ */
+
+const { Zalo } = require('zalo-api-final');
+const fs = require('fs');
+const path = require('path');
+const HealthMonitor = require('./health-monitor');
+const telegram = require('./telegram');
+const statusPing = require('./status-ping');
+
+// ============================================================================
+// MULTI-SESSION STATE
+// ============================================================================
+
+/**
+ * Map of all active sessions
+ * Key: accountId (number)
+ * Value: Zalo API instance
+ */
+const sessions = new Map();
+
+/**
+ * Map of session metadata
+ * Key: accountId (number)
+ * Value: { isInitialized, loginCompleted, loginInProgress, wsListener, keepAliveInterval }
+ */
+const sessionData = new Map();
+
+
+/**
+ * Map to lookup zalo_id from account_id (for session sharing across branches)
+ * Key: accountId (number)
+ * Value: zaloId (string like "688678230773032494")
+ */
+const accountToZaloId = new Map();
+/**
+ * Map of health monitors
+ * Key: accountId (number)
+ * Value: HealthMonitor instance
+ */
+const healthMonitors = new Map();
+
+/**
+ * Currently active account ID
+ * API calls without explicit accountId will use this account
+ */
+let activeAccountId = null;
+
+/**
+ * Default keep-alive interval (45 seconds)
+ */
+const KEEP_ALIVE_INTERVAL = 45000;
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Get session for a specific account
+ * If no accountId provided, use activeAccountId
+ */
+function getSession(accountId = null) {
+  const targetId = accountId || activeAccountId;
+
+  if (!targetId) {
+    console.log('⚠️  No accountId provided and no active account set');
+    return null;
+  }
+
+  const session = sessions.get(targetId);
+  if (!session) {
+    console.log(`⚠️  No session found for account ID: ${targetId}`);
+    return null;
+  }
+
+  return session;
+}
+
+/**
+ * Get session data (metadata) for an account
+ */
+function getSessionData(accountId) {
+  if (!sessionData.has(accountId)) {
+    // Initialize default data
+    sessionData.set(accountId, {
+      isInitialized: false,
+      loginCompleted: false,
+      loginInProgress: false,
+      wsListener: null,
+      keepAliveInterval: null,
+      isRestarting: false,
+      restartTimeout: null
+    });
+  }
+  return sessionData.get(accountId);
+}
+
+/**
+ * Update session data
+ */
+function updateSessionData(accountId, updates) {
+  const data = getSessionData(accountId);
+  Object.assign(data, updates);
+  sessionData.set(accountId, data);
+}
+
+/**
+ * Generate session ID for storage
+ */
+function getSessionId(accountId) {
+  return `zalo_${accountId}`;
+}
+
+/**
+ * Get sessions directory path
+ */
+function getSessionsDir() {
+  return path.join(__dirname, '..', 'sessions');
+}
+
+/**
+ * Ensure sessions directory exists
+ */
+function ensureSessionsDir() {
+  const sessionsDir = getSessionsDir();
+  if (!fs.existsSync(sessionsDir)) {
+    fs.mkdirSync(sessionsDir, { recursive: true });
+    console.log('📁 Created sessions directory:', sessionsDir);
+  }
+  return sessionsDir;
+}
+
+// ============================================================================
+// INITIALIZATION
+// ============================================================================
+
+/**
+ * Initialize Zalo API client with QR Code login
+ *
+ * @param {number} accountId - Account ID to initialize
+ * @param {function} qrCallback - Callback for QR code
+ * @param {boolean} forceNew - Force new login even if session exists
+ * @returns {Promise<Zalo>} Zalo API instance
+ */
+async function initializeZalo(accountId, qrCallback, forceNew = false) {
+  try {
+    console.log(`🔧 [Multi-Session] Initializing account ID: ${accountId}`);
+    console.log(`   forceNew: ${forceNew}`);
+    console.log(`   Total sessions: ${sessions.size}`);
+    console.log(`   Active sessions: ${Array.from(sessions.keys()).join(', ')}`);
+
+    const data = getSessionData(accountId);
+    const existingSession = sessions.get(accountId);
+
+    // If already initialized and login completed, return existing instance
+    if (!forceNew && data.isInitialized && data.loginCompleted && existingSession) {
+      console.log(`✅ Using existing session for account ${accountId}`);
+
+      // Verify it's an API instance
+      if (typeof existingSession.getAllFriends === 'function') {
+        if (qrCallback && typeof qrCallback === 'function') {
+          console.log('⚠️  Already logged in, cannot generate new QR code');
+          console.log('   Use forceNew=true to create new session');
+        }
+        return existingSession;
+      } else {
+        console.log('⚠️  Existing session is not valid API instance, reinitializing...');
+        updateSessionData(accountId, {
+          isInitialized: false,
+          loginCompleted: false
+        });
+        sessions.delete(accountId);
+      }
+    }
+
+    // If forceNew, reset state for this account only
+    if (forceNew) {
+      console.log(`🔄 Force new login for account ${accountId}, resetting state...`);
+      updateSessionData(accountId, {
+        isInitialized: false,
+        loginCompleted: false,
+        loginInProgress: false
+      });
+
+      // Note: We DON'T clear other sessions or activeAccountId
+      // Only this specific account is reset
+    }
+
+    console.log(`🔧 Creating new Zalo client for account ${accountId}...`);
+
+    // Create new Zalo instance
+    const zaloClient = new Zalo({
+      cookie: '', // Will be set via QR login
+      imei: process.env.ZALO_IMEI || '',
+      userAgent: process.env.ZALO_USER_AGENT || '',
+      selfListen: true, // Enable receiving messages from other devices
+    });
+    console.log(`   ✅ selfListen enabled for account ${accountId}`);
+
+    // QR login process
+    console.log(`🔐 Initiating QR Code login for account ${accountId}...`);
+
+    updateSessionData(accountId, {
+      loginInProgress: true,
+      loginCompleted: false
+    });
+
+    const qrFilePath = path.join(__dirname, '..', `qr_${accountId}.png`);
+
+    // Clean up old QR file if exists
+    try {
+      if (fs.existsSync(qrFilePath)) {
+        fs.unlinkSync(qrFilePath);
+        console.log(`🧹 Cleaned up old QR file for account ${accountId}`);
+      }
+    } catch (error) {
+      console.log(`⚠️  Could not delete old QR file: ${error.message}`);
+    }
+
+    let qrCodeString = null;
+    let qrReceived = false;
+    let qrBase64 = null;
+
+    console.log(`📞 Starting loginQR with callback for account ${accountId}...`);
+
+    // loginQR() returns Promise<API> - the API instance
+    const loginPromise = zaloClient.loginQR((qr) => {
+      console.log(`📱 QR Code callback received for account ${accountId}!`);
+      console.log('   QR type:', typeof qr);
+      console.log('   QR length:', qr ? qr.length : 0);
+
+      qrCodeString = qr;
+      qrReceived = true;
+
+      // Convert QR string to base64 image data URL
+      if (qr && qr.startsWith('data:')) {
+        qrBase64 = qr;
+      } else if (qr) {
+        qrBase64 = `data:image/png;base64,${qr}`;
+      }
+
+      // Call custom callback if provided
+      if (qrCallback && typeof qrCallback === 'function') {
+        console.log(`📤 Calling custom QR callback for account ${accountId}...`);
+        qrCallback(qrBase64);
+      }
+    });
+
+    // Handle login completion
+    loginPromise.then(async (apiInstance) => {
+      console.log(`\n✅✅✅ QR login successful for account ${accountId}!`);
+      console.log('   Received API instance');
+
+      // IMPORTANT: Store API instance in sessions Map
+      sessions.set(accountId, apiInstance);
+      console.log(`   ✅ Stored session for account ${accountId} in Map`);
+      console.log(`   Total sessions now: ${sessions.size}`);
+
+      // SESSION SHARING: Fetch zalo_id and store session by zalo_id for multi-branch support
+      try {
+        console.log(`🔗 [Session Sharing] Fetching zalo_id for account ${accountId}...`);
+        
+        const laravelUrl = process.env.LARAVEL_URL || "http://127.0.0.1:8000";
+        const fetchUrl = `${laravelUrl}/api/zalo/accounts/${accountId}/zalo-id`;
+        
+        // Fetch zalo_id from Laravel
+        const zaloIdData = await new Promise((resolve, reject) => {
+          http.get(fetchUrl, (resp) => {
+            let data = "";
+            resp.on("data", (chunk) => { data += chunk; });
+            resp.on("end", () => {
+              try {
+                resolve(JSON.parse(data));
+              } catch (e) {
+                reject(e);
+              }
+            });
+          }).on("error", reject);
+        });
+        
+        if (zaloIdData.success && zaloIdData.data && zaloIdData.data.zalo_id) {
+          const zaloId = zaloIdData.data.zalo_id;
+          console.log(`   ✅ Got zalo_id: ${zaloId}`);
+          
+          // Store session by zalo_id (primary key for session sharing)
+          sessions.set(zaloId, apiInstance);
+          console.log(`   ✅ Stored session with zalo_id: ${zaloId}`);
+          
+          // Store mapping accountId → zaloId
+          accountToZaloId.set(accountId, zaloId);
+          console.log(`   ✅ Created mapping: account ${accountId} → zalo_id ${zaloId}`);
+        } else {
+          console.log(`   ⚠️  Could not fetch zalo_id, session sharing disabled for this account`);
+        }
+      } catch (error) {
+        console.error(`   ⚠️  Session sharing setup failed: ${error.message}`);
+        // Non-critical error - session still works via accountId
+      }
+
+
+      updateSessionData(accountId, {
+        isInitialized: true,
+        loginCompleted: true,
+        loginInProgress: false
+      });
+
+      // Set as active if no active account
+      if (!activeAccountId) {
+        activeAccountId = accountId;
+        console.log(`   ✅ Set account ${accountId} as active (first account)`);
+      }
+
+      // Try to get and save credentials
+      try {
+        if (typeof apiInstance.getCookie === 'function') {
+          const cookie = await apiInstance.getCookie();
+          if (cookie && cookie.cookies) {
+            await saveCredentialsForAccount(accountId, cookie);
+          }
+        }
+      } catch (error) {
+        console.error(`   ⚠️  Failed to save credentials for account ${accountId}:`, error.message);
+      }
+
+      // Start keep-alive for this session
+      startKeepAliveForAccount(accountId);
+
+      // Start WebSocket listener for this session
+      startWebSocketListenerForAccount(accountId);
+
+      // Start health monitoring for this session
+      startHealthMonitorForAccount(accountId);
+
+      console.log(`🎉 Account ${accountId} fully initialized and ready!`);
+      // Start status ping to keep session alive
+      statusPing.startStatusPing(accountId, sessions.get(accountId));
+      // Stop QR monitor since login succeeded
+      stopQRMonitor(accountId);
+
+      // VALIDATION: Check if logged in Zalo matches expected account
+      try {
+        let loggedInZaloId = null;
+        let accountName = null;
+        
+        // Get Zalo ID from logged in account
+        if (typeof apiInstance.getOwnId === 'function') {
+          loggedInZaloId = await apiInstance.getOwnId();
+        }
+        
+        // Get account name from profile
+        if (typeof apiInstance.fetchAccountInfo === 'function') {
+          const accountInfo = await apiInstance.fetchAccountInfo();
+          if (accountInfo && accountInfo.data) {
+            accountName = accountInfo.data.displayName || accountInfo.data.zaloName || accountInfo.data.name || null;
+          }
+        }
+        
+        console.log(`🔍 [Validation] Logged in as Zalo ID: ${loggedInZaloId}, Name: ${accountName}`);
+        
+        // Fetch expected zalo_id from database
+        const laravelUrl = process.env.LARAVEL_URL || "http://127.0.0.1:8000";
+        const fetchUrl = `${laravelUrl}/api/zalo/accounts/${accountId}/zalo-id`;
+        
+        let expectedZaloId = null;
+        try {
+          const zaloIdData = await new Promise((resolve, reject) => {
+            http.get(fetchUrl, (resp) => {
+              let data = "";
+              resp.on("data", (chunk) => { data += chunk; });
+              resp.on("end", () => {
+                try {
+                  resolve(JSON.parse(data));
+                } catch (e) {
+                  reject(e);
+                }
+              });
+            }).on("error", reject);
+          });
+          
+          if (zaloIdData.success && zaloIdData.data && zaloIdData.data.zalo_id) {
+            expectedZaloId = zaloIdData.data.zalo_id;
+            console.log(`🔍 [Validation] Expected Zalo ID from DB: ${expectedZaloId}`);
+          }
+        } catch (fetchError) {
+          console.warn(`⚠️  [Validation] Could not fetch expected zalo_id: ${fetchError.message}`);
+        }
+        
+        // VALIDATE: If expected zalo_id exists and doesn't match logged in zalo_id
+        if (expectedZaloId && loggedInZaloId && expectedZaloId !== loggedInZaloId) {
+          console.error(`❌ [Validation] WRONG ACCOUNT LOGGED IN!`);
+          console.error(`   Expected: ${expectedZaloId}`);
+          console.error(`   Got: ${loggedInZaloId} (${accountName})`);
+          console.error(`   🚫 Auto-logging out wrong account...`);
+          
+          // Cleanup and logout
+          try {
+            sessions.delete(accountId);
+            sessionData.delete(accountId);
+            activeAccountId = null;
+            
+            // Send error notification to Telegram
+            telegram.sendMessage(
+              `⛔ WRONG ZALO ACCOUNT DETECTED!\n\n` +
+              `Account ID: ${accountId}\n` +
+              `Expected: ${expectedZaloId}\n` +
+              `Logged in: ${loggedInZaloId} (${accountName})\n\n` +
+              `❌ Auto-logged out. Please scan QR with correct account.`
+            );
+            
+            console.log(`✅ [Validation] Wrong account cleaned up successfully`);
+          } catch (cleanupError) {
+            console.error(`❌ [Validation] Cleanup error: ${cleanupError.message}`);
+          }
+          
+          return; // Stop initialization
+        }
+        
+        console.log(`✅ [Validation] Correct account logged in!`);
+        
+        // Send Telegram notification for successful login
+        telegram.sendLoginSuccessAlert(accountId, loggedInZaloId, accountName);
+      } catch (telegramError) {
+        console.warn("[Zalo] Failed to send login success notification:", telegramError.message);
+      }
+    }).catch((error) => {
+      console.error(`❌ Login failed for account ${accountId}:`, error);
+      updateSessionData(accountId, {
+        loginInProgress: false,
+        loginCompleted: false
+      });
+    });
+
+    // Wait for QR callback to be invoked (with timeout)
+    // The loginQR() method should call the callback within a few seconds
+    const QR_CALLBACK_TIMEOUT = 5000; // 5 seconds
+    await new Promise((resolve) => {
+      const startTime = Date.now();
+      const checkInterval = setInterval(() => {
+        if (qrReceived || (Date.now() - startTime) > QR_CALLBACK_TIMEOUT) {
+          clearInterval(checkInterval);
+          resolve();
+        }
+      }, 100); // Check every 100ms
+    });
+
+    if (!qrReceived) {
+      console.log(`⚠️  QR callback not received within ${QR_CALLBACK_TIMEOUT}ms for account ${accountId}`);
+      console.log(`   Attempting to read QR file manually...`);
+
+      // Fallback: Try to read QR file if it exists
+      // Try both qr_${accountId}.png and qr.png (library default)
+      const qrPaths = [
+        qrFilePath,
+        path.join(__dirname, '..', 'qr.png'), // Library default
+      ];
+
+      try {
+        let foundQr = false;
+        for (const qrPath of qrPaths) {
+          if (fs.existsSync(qrPath)) {
+            console.log(`   Found QR file at: ${qrPath}`);
+            const qrImageBuffer = fs.readFileSync(qrPath);
+            const qrImageBase64 = qrImageBuffer.toString('base64');
+            qrBase64 = `data:image/png;base64,${qrImageBase64}`;
+            qrReceived = true;
+            foundQr = true;
+            console.log(`✅ Successfully read QR from file for account ${accountId}`);
+
+            // Call the callback if provided
+            if (qrCallback && typeof qrCallback === 'function') {
+              qrCallback(qrBase64);
+            }
+            break;
+          }
+        }
+
+        if (!foundQr) {
+          console.log(`   No QR file found in any of the expected paths`);
+        }
+      } catch (error) {
+        console.error(`❌ Failed to read QR file for account ${accountId}:`, error.message);
+      }
+    }
+
+    // Return the zaloClient (not API instance yet)
+    // The API instance will be stored in sessions Map after successful login
+    return zaloClient;
+
+  } catch (error) {
+    console.error(`❌ Initialize error for account ${accountId}:`, error);
+    updateSessionData(accountId, {
+      loginInProgress: false,
+      loginCompleted: false
+    });
+    throw error;
+  }
+}
+
+// ============================================================================
+// SESSION MANAGEMENT
+// ============================================================================
+
+/**
+ * Check if a specific account is ready
+ */
+function isAccountReady(accountId = null) {
+  const targetId = accountId || activeAccountId;
+
+  if (!targetId) {
+    return false;
+  }
+
+  const data = getSessionData(targetId);
+  const session = sessions.get(targetId);
+
+  return data.loginCompleted && data.isInitialized && session !== null;
+}
+
+/**
+ * Switch active account
+ */
+function switchAccount(accountId) {
+  console.log(`🔄 Switching to account ${accountId}...`);
+
+  if (!sessions.has(accountId)) {
+    throw new Error(`Account ${accountId} not found in sessions`);
+  }
+
+  const data = getSessionData(accountId);
+  if (!data.loginCompleted || !data.isInitialized) {
+    throw new Error(`Account ${accountId} is not ready`);
+  }
+
+  const oldActive = activeAccountId;
+  activeAccountId = accountId;
+
+  console.log(`✅ Switched from account ${oldActive} to ${accountId}`);
+  console.log(`   Active account is now: ${activeAccountId}`);
+
+  return true;
+}
+
+/**
+ * Get all active sessions
+ */
+function getAllSessions() {
+  const sessionsList = [];
+
+  for (const [accountId, session] of sessions.entries()) {
+    const data = getSessionData(accountId);
+
+    sessionsList.push({
+      accountId: accountId,
+      sessionId: getSessionId(accountId),
+      isConnected: data.loginCompleted && data.isInitialized,
+      isActive: accountId === activeAccountId
+    });
+  }
+
+  return {
+    sessions: sessionsList,
+    activeAccountId: activeAccountId,
+    total: sessionsList.length
+  };
+}
+
+/**
+ * Disconnect a specific account
+ */
+async function disconnectAccount(accountId) {
+  console.log(`🔌 Disconnecting account ${accountId}...`);
+
+  if (!sessions.has(accountId)) {
+    console.log(`   Account ${accountId} not found in sessions`);
+    return false;
+  }
+
+  // Stop health monitor
+  stopHealthMonitorForAccount(accountId);
+
+  // Stop keep-alive
+  const data = getSessionData(accountId);
+  if (data.keepAliveInterval) {
+    clearInterval(data.keepAliveInterval);
+    updateSessionData(accountId, { keepAliveInterval: null });
+  }
+
+  // Stop WebSocket listener
+  if (data.wsListener) {
+    try {
+      const session = sessions.get(accountId);
+      if (session && session.listener && typeof session.listener.stopListening === 'function') {
+        await session.listener.stopListening();
+      }
+    } catch (error) {
+      console.error(`   Error stopping listener: ${error.message}`);
+    }
+    updateSessionData(accountId, { wsListener: null });
+  }
+
+  // Remove from sessions
+  sessions.delete(accountId);
+  sessionData.delete(accountId);
+
+  // If this was active account, switch to another or clear
+  if (activeAccountId === accountId) {
+    const remainingSessions = Array.from(sessions.keys());
+    if (remainingSessions.length > 0) {
+      activeAccountId = remainingSessions[0];
+      console.log(`   Switched active account to ${activeAccountId}`);
+    } else {
+      activeAccountId = null;
+      console.log(`   No remaining sessions, cleared active account`);
+    }
+  }
+
+  console.log(`✅ Account ${accountId} disconnected`);
+  console.log(`   Remaining sessions: ${sessions.size}`);
+
+  return true;
+}
+
+/**
+ * Get current Zalo client (for backward compatibility)
+ */
+function getZaloClient(accountId = null) {
+  return getSession(accountId);
+}
+
+// ============================================================================
+// KEEP-ALIVE
+// ============================================================================
+
+/**
+ * Start keep-alive for a specific account
+ */
+function startKeepAliveForAccount(accountId) {
+  const session = sessions.get(accountId);
+  const data = getSessionData(accountId);
+
+  if (!session || typeof session.keepAlive !== 'function') {
+    console.log(`⚠️  Cannot start keep-alive for account ${accountId}: No valid session`);
+    return;
+  }
+
+  // Clear existing interval if any
+  if (data.keepAliveInterval) {
+    clearInterval(data.keepAliveInterval);
+  }
+
+  console.log(`🔄 Starting keep-alive for account ${accountId} (interval: ${KEEP_ALIVE_INTERVAL}ms)`);
+
+  const interval = setInterval(async () => {
+    try {
+      const currentSession = sessions.get(accountId);
+      if (currentSession && typeof currentSession.keepAlive === 'function') {
+        await currentSession.keepAlive();
+        // Silent - don't log every keep-alive
+      }
+    } catch (error) {
+      console.error(`❌ Keep-alive failed for account ${accountId}:`, error.message);
+    }
+  }, KEEP_ALIVE_INTERVAL);
+
+  updateSessionData(accountId, { keepAliveInterval: interval });
+  console.log(`✅ Keep-alive started for account ${accountId}`);
+}
+
+/**
+ * Stop keep-alive for all accounts
+ */
+function stopKeepAlive() {
+  console.log('🛑 Stopping keep-alive for all accounts...');
+
+  for (const [accountId, data] of sessionData.entries()) {
+    if (data.keepAliveInterval) {
+      clearInterval(data.keepAliveInterval);
+      console.log('   Stopped keep-alive for account ' + accountId);
+    }
+  }
+  
+  // Stop all status pings
+  statusPing.stopAll();
+}
+// HEALTH MONITORING
+// ============================================================================
+
+/**
+ * Start health monitoring for a specific account
+ */
+function startHealthMonitorForAccount(accountId) {
+  if (healthMonitors.has(accountId)) {
+    console.log(`⚠️  Health monitor already exists for account ${accountId}`);
+    return healthMonitors.get(accountId);
+  }
+
+  console.log(`🏥 Starting health monitor for account ${accountId}...`);
+
+  // Create health monitor with access to this service
+  const zaloService = {
+    getClient: () => getSession(accountId),
+    stopListener: () => stopListenerForAccount(accountId),
+    startListener: () => startWebSocketListenerForAccount(accountId)
+  };
+
+  const healthMonitor = new HealthMonitor(zaloService);
+  healthMonitor.start();
+
+  healthMonitors.set(accountId, healthMonitor);
+  console.log(`✅ Health monitor started for account ${accountId}`);
+
+  return healthMonitor;
+}
+
+/**
+ * Stop health monitor for a specific account
+ */
+function stopHealthMonitorForAccount(accountId) {
+  const healthMonitor = healthMonitors.get(accountId);
+  if (healthMonitor) {
+    healthMonitor.stop();
+    healthMonitors.delete(accountId);
+    console.log(`🛑 Health monitor stopped for account ${accountId}`);
+  }
+}
+
+/**
+ * Stop listener for a specific account
+ */
+async function stopListenerForAccount(accountId) {
+  const session = sessions.get(accountId);
+  const data = getSessionData(accountId);
+
+  if (!session) {
+    console.log(`⚠️  No session found for account ${accountId}`);
+    return;
+  }
+
+  if (data.wsListener && session.listener && typeof session.listener.stopListening === 'function') {
+    console.log(`🛑 Stopping listener for account ${accountId}...`);
+    await session.listener.stopListening();
+    updateSessionData(accountId, { wsListener: null });
+    console.log(`✅ Listener stopped for account ${accountId}`);
+  }
+}
+
+/**
+ * Get health status for a specific account
+ */
+function getHealthStatus(accountId) {
+  const healthMonitor = healthMonitors.get(accountId);
+  if (!healthMonitor) {
+    return {
+      error: 'No health monitor found for this account',
+      accountId: accountId
+    };
+  }
+
+  return {
+    accountId: accountId,
+    ...healthMonitor.getStatus()
+  };
+}
+
+/**
+ * Get health status for all accounts
+ */
+function getAllHealthStatus() {
+  const statuses = [];
+  for (const [accountId, healthMonitor] of healthMonitors.entries()) {
+    statuses.push({
+      accountId: accountId,
+      ...healthMonitor.getStatus()
+    });
+  }
+  return statuses;
+}
+
+// ============================================================================
+// WEBSOCKET LISTENER
+// ============================================================================
+
+/**
+ * Handle incoming message and forward to Laravel webhook
+ */
+async function handleIncomingMessage(accountId, event) {
+  try {
+    // Record incoming message activity for health monitoring
+    const healthMonitor = healthMonitors.get(accountId);
+    if (healthMonitor) {
+      healthMonitor.recordIncomingMessage();
+    }
+
+    const laravelUrl = process.env.LARAVEL_URL || 'http://127.0.0.1:8000';
+    const apiKey = process.env.API_SECRET_KEY;
+
+    if (!apiKey) {
+      console.warn('⚠️  API_SECRET_KEY not set, cannot save message');
+      return;
+    }
+
+    // Extract message data from event
+    const recipientId = event.userId || event.groupId;
+    const recipientType = event.groupId ? 'group' : 'user';
+    
+    // 🔥 DEBUG: Log event properties to understand duplicate issue
+    console.log('📥 [zalo-service] handleIncomingMessage event:', {
+      messageId: event.messageId,
+      userId: event.userId,
+      groupId: event.groupId,
+      recipientId,
+      recipientType,
+      isSelf: event.isSelf,
+      eventKeys: Object.keys(event).slice(0, 15),
+    });
+
+    // Fetch recipient info (name and avatar) from Zalo API
+    let recipientName = null;
+    let recipientAvatar = null;
+
+    try {
+      const session = getSession(accountId);
+      if (session) {
+        if (recipientType === 'group' && typeof session.getGroupInfo === 'function') {
+          console.log(`📥 [zalo-service] Fetching group info for ${recipientId}...`);
+          const groupInfo = await session.getGroupInfo(recipientId);
+          if (groupInfo) {
+            // Extract from gridInfoMap if available
+            if (groupInfo.gridInfoMap && groupInfo.gridInfoMap[recipientId]) {
+              const groupData = groupInfo.gridInfoMap[recipientId];
+              recipientName = groupData.name || null;
+              recipientAvatar = groupData.avt || groupData.fullAvt || null;
+            } else {
+              recipientName = groupInfo.name || null;
+              recipientAvatar = groupInfo.avt || groupInfo.fullAvt || groupInfo.avatar || null;
+            }
+            console.log(`   ✅ Group info fetched: ${recipientName}`);
+          }
+        } else if (recipientType === 'user' && typeof session.getUserInfo === 'function') {
+          console.log(`📥 [zalo-service] Fetching user info for ${recipientId}...`);
+          const userInfo = await session.getUserInfo(recipientId);
+          if (userInfo) {
+            // Extract from changed_profiles if available
+            if (userInfo.changed_profiles && userInfo.changed_profiles[recipientId]) {
+              const userData = userInfo.changed_profiles[recipientId];
+              recipientName = userData.displayName || userData.zaloName || userData.name || null;
+              recipientAvatar = userData.avatar || userData.avatarUrl || null;
+            } else {
+              recipientName = userInfo.displayName || userInfo.zaloName || userInfo.name || null;
+              recipientAvatar = userInfo.avatar || userInfo.avatarUrl || null;
+            }
+            console.log(`   ✅ User info fetched: ${recipientName}`);
+          }
+        }
+      }
+    } catch (fetchError) {
+      console.warn(`⚠️  [zalo-service] Failed to fetch recipient info:`, fetchError.message);
+      // Continue without recipient info - it's not critical
+    }
+
+    // Ensure content is always a string (safely handle different types)
+    let content = '';
+    let contentObject = null;
+    let styles = null; // Rich text styles
+    const rawContent = event.text || event.content || '';
+    if (typeof rawContent === 'string') {
+      content = rawContent;
+    } else if (typeof rawContent === 'number') {
+      content = String(rawContent);
+    } else if (rawContent && typeof rawContent === 'object') {
+      // Store object for content type detection
+      contentObject = rawContent;
+      // Extract styles if available (for rich text messages)
+      if (rawContent.styles && Array.isArray(rawContent.styles)) {
+        styles = rawContent.styles;
+      } else if (rawContent.msg && rawContent.styles) {
+        // Format: { msg: string, styles: Style[] }
+        styles = rawContent.styles;
+        content = rawContent.msg || '';
+      }
+      // If it's an object or array, stringify it
+      if (!content) {
+        content = JSON.stringify(rawContent);
+      }
+    }
+    
+    // Also check event.data for styles (alternative format)
+    if (!styles && event.data) {
+      if (event.data.styles && Array.isArray(event.data.styles)) {
+        styles = event.data.styles;
+      } else if (event.data.content && typeof event.data.content === 'object') {
+        if (event.data.content.styles && Array.isArray(event.data.content.styles)) {
+          styles = event.data.content.styles;
+        }
+      }
+    }
+
+    // 🔥 FIX: Convert all styles from end format to len format
+    // This ensures consistency regardless of source (rawContent, event.data, or params)
+    if (styles && Array.isArray(styles)) {
+      console.log('🔍 [BEFORE CONVERSION] styles:', JSON.stringify(styles));
+      styles = styles.map(style => {
+        if (style.end !== undefined && style.len === undefined) {
+          // Convert end to len
+          const converted = {
+            ...style,
+            len: style.end - (style.start || 0)
+          };
+          delete converted.end;  // Remove end property
+          console.log('✅ [CONVERTED] from:', JSON.stringify(style), 'to:', JSON.stringify(converted));
+          return converted;
+        }
+        return style;  // Keep as-is if already has len
+      });
+      console.log('🔍 [AFTER CONVERSION] styles:', JSON.stringify(styles));
+
+      // 🔥 FIX: Deduplicate styles (Zalo API sometimes sends duplicate styles)
+      // Remove exact duplicates based on start, len, and style properties
+      const seen = new Set();
+      styles = styles.filter(style => {
+        const key = JSON.stringify(style);
+        if (seen.has(key)) {
+          console.log('🗑️ [DEDUP] Removing duplicate style:', key);
+          return false;
+        }
+        seen.add(key);
+        return true;
+      });
+      console.log('✅ [AFTER DEDUP] styles count:', styles.length);
+    }
+
+    const messageId = event.messageId || event.id || null;
+    const cliMsgId = event.cliMsgId || null;
+    const attachment = event.attachment || null;
+    const quote = event.quote || null;
+
+    // Determine content type
+    let contentType = 'text';
+    let mediaUrl = null;
+    let stickerData = null;
+    let fileData = null;
+
+    // 🎨 Check for sticker messages
+    // Stickers come as content objects with sticker properties (id, stickerUrl, etc.)
+    // 🔧 FIX: Also detect stickers WITHOUT URLs (received stickers might only have id, cateId, type)
+    const isSticker = contentObject && (contentObject.stickerId || contentObject.id) && (contentObject.stickerUrl || contentObject.cateId !== undefined);
+
+    if (isSticker) {
+      contentType = 'sticker';
+      const stickerId = contentObject.stickerId || contentObject.id;
+
+      // 🔧 FIX: If sticker doesn't have URL, fetch it from Zalo API
+      if (!contentObject.stickerUrl && !contentObject.stickerWebpUrl) {
+        console.log(`🎨 [zalo-service] Sticker received without URL, fetching details...`, {
+          stickerId,
+          cateId: contentObject.cateId,
+          type: contentObject.type
+        });
+
+        try {
+          // Fetch sticker details from Zalo API
+          if (zalo && typeof zalo.getStickersDetail === 'function') {
+            const stickerDetails = await zalo.getStickersDetail([stickerId]);
+
+            if (stickerDetails && stickerDetails.length > 0) {
+              const details = stickerDetails[0];
+              console.log(`✅ [zalo-service] Fetched sticker details:`, {
+                id: details.id,
+                hasStickerUrl: !!details.stickerUrl,
+                hasWebpUrl: !!details.stickerWebpUrl
+              });
+
+              // Merge fetched details with existing data
+              contentObject.stickerUrl = details.stickerUrl;
+              contentObject.stickerWebpUrl = details.stickerWebpUrl;
+              contentObject.stickerSpriteUrl = details.stickerSpriteUrl;
+              contentObject.uri = details.uri || contentObject.uri;
+              contentObject.text = details.text || contentObject.text || '';
+            }
+          }
+        } catch (error) {
+          console.error(`❌ [zalo-service] Failed to fetch sticker details:`, error.message);
+          // Continue without URL - will be displayed as fallback in frontend
+        }
+      }
+
+      mediaUrl = contentObject.stickerUrl || contentObject.stickerWebpUrl || contentObject.uri;
+      stickerData = {
+        id: stickerId,
+        cateId: contentObject.cateId,
+        type: contentObject.type,
+        text: contentObject.text || '',
+        uri: contentObject.uri,
+        stickerUrl: contentObject.stickerUrl,
+        stickerSpriteUrl: contentObject.stickerSpriteUrl,
+        stickerWebpUrl: contentObject.stickerWebpUrl,
+      };
+      // Override content to be sticker text/emoji representation
+      content = contentObject.text || '[Sticker]';
+    }
+    // 🎨 Check for rich text message with styles in params
+    if (contentObject && contentObject.action === 'rtf' && contentObject.params) {
+      try {
+        const params = typeof contentObject.params === 'string' 
+          ? JSON.parse(contentObject.params) 
+          : contentObject.params;
+        
+        if (params && params.styles && Array.isArray(params.styles)) {
+          // Convert zalo-api-final style format to our format
+          // zalo-api-final: { start: number, len: number, st: "lst_1" | "lst_2" | ... }
+          // Our format: { start: number, len: number, unorderedList?: boolean, orderedList?: boolean }
+          styles = params.styles.map(style => {
+            const converted = {
+              start: style.start || 0,
+              len: style.len || 0  // 🔥 FIX: Keep len, DON'T convert to end
+            };
+            
+            // Map style type to our format
+            if (style.st === 'lst_1' || style.st === 'UnorderedList') {
+              converted.unorderedList = true;
+            } else if (style.st === 'lst_2' || style.st === 'OrderedList') {
+              converted.orderedList = true;
+            }
+            
+            // Map other styles
+            if (style.st === 'Bold' || style.st === 'bold') {
+              converted.bold = true;
+            } else if (style.st === 'Italic' || style.st === 'italic') {
+              converted.italic = true;
+            } else if (style.st === 'Underline' || style.st === 'underline') {
+              converted.underline = true;
+            } else if (style.st === 'Red' || style.st === 'red') {
+              converted.color = 'c_db342e';
+            } else if (style.st === 'Orange' || style.st === 'orange') {
+              converted.color = 'c_f27806';
+            } else if (style.st === 'Yellow' || style.st === 'yellow') {
+              converted.color = 'c_f7b503';
+            } else if (style.st === 'Green' || style.st === 'green') {
+              converted.color = 'c_15a85f';
+            }
+            
+            return converted;
+          });
+          
+          // Extract plain text from title
+          if (contentObject.title) {
+            content = contentObject.title;
+          }
+          
+          console.log('🎨 [zalo-service] Extracted styles from params:', {
+            stylesCount: styles.length,
+            hasUnorderedList: styles.some(s => s.unorderedList),
+            hasOrderedList: styles.some(s => s.orderedList)
+          });
+        }
+      } catch (e) {
+        console.error('❌ [zalo-service] Failed to parse params for styles:', e.message);
+      }
+    }
+    
+    // 🔧 FIX: Check for image/file in content object (Zalo link cards)
+    else if (contentObject && contentObject.href) {
+      const href = contentObject.href;
+      const title = contentObject.title || '';
+      const params = contentObject.params || '';
+
+      // Check if it's a Zalo CDN URL (images/files)
+      if (href.match(/\.(jpg|jpeg|png|gif|webp|bmp)(\?|$)/i) || href.includes('.zdn.vn/') || href.includes('zalo-api')) {
+        contentType = 'image';
+        mediaUrl = href;
+      }
+      // 🎥 Check for video by URL pattern (video-stal, video-zvc, etc.)
+      else if (href.match(/video-[a-z]+-\d+\.dlmd\.me|\.mp4|\.mov|\.avi|\.webm|\.mkv/i)) {
+        contentType = 'video';
+        mediaUrl = href;
+        fileData = contentObject; // Store full file metadata
+      }
+      // Check for file by URL extension
+      else if (href.match(/\.(pdf|doc|docx|xls|xlsx|ppt|pptx|zip|rar|txt)(\?|$)/i)) {
+        contentType = 'file';
+        mediaUrl = href;
+        fileData = contentObject; // Store full file metadata
+      }
+      // 🆕 Check for file by title extension (for URLs without extensions like dlfl.vn)
+      else if (title && title.match(/\.(pdf|doc|docx|xls|xlsx|ppt|pptx|zip|rar|txt|7z|tar|gz)$/i)) {
+        contentType = 'file';
+        mediaUrl = href;
+        fileData = contentObject; // Store full file metadata
+        // Override content to show filename
+        content = title;
+      }
+      // 🆕 Check for file by params metadata
+      else if (params && (params.includes('"fileExt"') || params.includes('"fileSize"') || params.includes('"fType"'))) {
+        contentType = 'file';
+        mediaUrl = href;
+        fileData = contentObject; // Store full file metadata
+        if (title) content = title;
+      }
+    }
+
+    // Check attachment (original logic)
+    if (attachment && contentType === 'text') {
+      if (attachment.type === 'image' || attachment.url?.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+        contentType = 'image';
+        mediaUrl = attachment.url;
+      } else if (attachment.type === 'video' || attachment.url?.match(/video-[a-z]+-\d+\.dlmd\.me|\.mp4|\.mov|\.avi|\.webm|\.mkv/i)) {
+        contentType = 'video';
+        mediaUrl = attachment.url;
+      } else if (attachment.type === 'file' || attachment.url) {
+        contentType = 'file';
+        mediaUrl = attachment.url;
+      } else if (attachment.type === 'sticker' || attachment.stickerId) {
+        contentType = 'sticker';
+        const stickerId = attachment.stickerId || attachment.id;
+
+        // 🔧 FIX: If sticker attachment doesn't have URL, fetch it from Zalo API
+        if (!attachment.stickerUrl && !attachment.stickerWebpUrl) {
+          console.log(`🎨 [zalo-service] Sticker attachment received without URL, fetching details...`, {
+            stickerId,
+            cateId: attachment.cateId,
+            type: attachment.type
+          });
+
+          try {
+            // Fetch sticker details from Zalo API
+            if (zalo && typeof zalo.getStickersDetail === 'function') {
+              const stickerDetails = await zalo.getStickersDetail([stickerId]);
+
+              if (stickerDetails && stickerDetails.length > 0) {
+                const details = stickerDetails[0];
+                console.log(`✅ [zalo-service] Fetched sticker attachment details:`, {
+                  id: details.id,
+                  hasStickerUrl: !!details.stickerUrl,
+                  hasWebpUrl: !!details.stickerWebpUrl
+                });
+
+                // Merge fetched details with existing data
+                attachment.stickerUrl = details.stickerUrl;
+                attachment.stickerWebpUrl = details.stickerWebpUrl;
+                attachment.stickerSpriteUrl = details.stickerSpriteUrl;
+                attachment.uri = details.uri || attachment.uri;
+                attachment.text = details.text || attachment.text || '';
+              }
+            }
+          } catch (error) {
+            console.error(`❌ [zalo-service] Failed to fetch sticker attachment details:`, error.message);
+            // Continue without URL - will be displayed as fallback in frontend
+          }
+        }
+
+        mediaUrl = attachment.stickerUrl || attachment.stickerWebpUrl || attachment.url;
+        stickerData = {
+          id: stickerId,
+          cateId: attachment.cateId,
+          type: attachment.type,
+          text: attachment.text || '',
+          uri: attachment.uri,
+          stickerUrl: attachment.stickerUrl,
+          stickerSpriteUrl: attachment.stickerSpriteUrl,
+          stickerWebpUrl: attachment.stickerWebpUrl,
+        };
+        content = attachment.text || '[Sticker]';
+      }
+    }
+
+    // MULTI-SESSION: Send account_id to Laravel webhook
+    console.log(`📤 [zalo-service] Forwarding message to Laravel webhook...`, {
+      account_id: accountId,
+      recipient_id: recipientId,
+      recipient_type: recipientType,
+      is_self: event.isSelf || false,
+      message_id: messageId,
+    });
+
+    // Call Laravel API to save message with ALL IDs
+    // Retry mechanism for reliability
+    const maxRetries = 3;
+    let retries = 0;
+    let response = null;
+    let lastError = null;
+
+    while (retries < maxRetries) {
+      try {
+        // 🔍 LOG: What styles are being sent to Laravel
+        if (styles && styles.length > 0) {
+          console.log('📤 [SENDING TO LARAVEL] styles:', JSON.stringify(styles));
+        }
+
+        response = await fetch(`${laravelUrl}/api/zalo/messages/receive`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': apiKey,
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify({
+            account_id: accountId, // MULTI-SESSION: Use account_id instead of zalo_id
+            recipient_id: recipientId,
+            recipient_type: recipientType,
+            recipient_name: recipientName, // Recipient name (friend or group)
+            recipient_avatar: recipientAvatar, // Recipient avatar URL
+            message_id: messageId,
+            cli_msg_id: cliMsgId,
+            global_msg_id: event.globalMsgId || messageId,
+            real_msg_id: event.realMsgId || messageId,
+            // Send all IDs for accurate finding
+            all_message_ids: event.allMessageIds || {
+              msgId: messageId,
+              cliMsgId: cliMsgId,
+              realMsgId: event.realMsgId || messageId,
+              globalMsgId: event.globalMsgId || messageId,
+            },
+            sender_id: event.senderId || null, // Sender Zalo user ID (for group messages)
+            sender_name: event.senderName || null, // Sender display name (for group messages)
+            content: content,
+            content_type: contentType,
+            media_url: mediaUrl,
+            sticker_data: stickerData, // Sticker metadata (id, stickerUrl, etc.)
+            file_data: fileData, // File metadata (title, href, params, etc.)
+            quote: quote,
+            styles: styles, // Rich text styles array
+            is_self: event.isSelf || false, // CRITICAL: Indicates if message is from same account (other device)
+            // 🔧 FIX: Don't send timestamp - let Laravel use its own now() timestamp
+            // Zalo's timestamp can be off by 1-2 minutes due to server processing delays
+            // sent_at: event.timestamp || new Date().toISOString()
+          })
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          console.log(`✅ [zalo-service] Message saved successfully`, {
+            account_id: accountId,
+            db_message_id: result.data?.id,
+            zalo_message_id: messageId,
+          });
+          break; // Success, exit retry loop
+        }
+
+        // If not OK, retry
+        retries++;
+        if (retries < maxRetries) {
+          const delay = 1000 * retries; // Exponential backoff: 1s, 2s, 3s
+          console.log(`⚠️  [zalo-service] Save message failed, retrying in ${delay}ms (attempt ${retries}/${maxRetries})...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      } catch (error) {
+        lastError = error;
+        retries++;
+        if (retries < maxRetries) {
+          const delay = 1000 * retries;
+          console.log(`⚠️  [zalo-service] Save message error, retrying in ${delay}ms (attempt ${retries}/${maxRetries})...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    // Log final error if all retries failed
+    if (retries >= maxRetries) {
+      if (lastError) {
+        console.error(`❌ [zalo-service] Failed to save message after ${maxRetries} retries:`, lastError.message);
+      } else if (response) {
+        const errorText = await response.text();
+        console.error(`❌ [zalo-service] Failed to save message after ${maxRetries} retries. Response:`, errorText);
+      }
+    }
+
+  } catch (error) {
+    console.error(`❌ [zalo-service] Error in handleIncomingMessage:`, error.message);
+    if (error.stack) {
+      console.error('   Stack:', error.stack);
+    }
+  }
+}
+
+/**
+ * MULTI-SESSION: Handle incoming reaction from WebSocket listener
+ * Forward reaction to Laravel webhook with account_id
+ */
+async function handleIncomingReaction(accountId, event) {
+  try {
+    const laravelUrl = process.env.LARAVEL_URL || 'http://127.0.0.1:8000';
+    const apiKey = process.env.API_SECRET_KEY;
+
+    if (!apiKey) {
+      console.warn('⚠️  API_SECRET_KEY not set, cannot save reaction');
+      return;
+    }
+
+    const payload = {
+      account_id: accountId, // MULTI-SESSION: Use account_id instead of zalo_id
+      message_id: event.messageId,
+      cli_msg_id: event.cliMsgId,
+      recipient_id: event.userId || event.groupId,
+      recipient_type: event.groupId ? 'group' : 'user',
+      user_id: event.userIdFrom,
+      reaction_icon: event.reactionIcon,
+      reaction_type: event.reactionType,
+      reaction_source: event.reactionSource,
+      reaction_data: event.reactionData,
+      reacted_at: event.timestamp
+    };
+
+    console.log('📤 [zalo-service] Sending reaction to Laravel:', {
+      account_id: payload.account_id,
+      message_id: payload.message_id,
+      cli_msg_id: payload.cli_msg_id,
+      recipient_id: payload.recipient_id,
+      recipient_type: payload.recipient_type,
+      user_id: payload.user_id,
+      reaction_icon: payload.reaction_icon,
+    });
+
+    // Call Laravel API to save reaction with retry mechanism
+    // Retry if message not found (might be race condition - message not saved yet)
+    const maxRetries = 3;
+    let retries = 0;
+    let response = null;
+    let lastError = null;
+
+    while (retries < maxRetries) {
+      try {
+        response = await fetch(`${laravelUrl}/api/zalo/messages/receive-reaction`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': apiKey,
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          console.log(`✅ [zalo-service] Reaction saved successfully`, {
+            account_id: accountId,
+            message_id: payload.message_id,
+            reaction_icon: payload.reaction_icon,
+          });
+          break; // Success, exit retry loop
+        }
+
+        // If 404 (message not found), retry after delay
+        // This handles race condition where reaction arrives before message is saved
+        if (response.status === 404) {
+          const errorData = await response.json().catch(() => ({}));
+          if (errorData.message && errorData.message.includes('Message not found')) {
+            retries++;
+            if (retries < maxRetries) {
+              const delay = 1000 * retries; // Exponential backoff: 1s, 2s, 3s
+              console.log(`⚠️  [zalo-service] Message not found for reaction, retrying in ${delay}ms (attempt ${retries}/${maxRetries})...`);
+              console.log(`   Searching for: message_id=${payload.message_id}, cli_msg_id=${payload.cli_msg_id}`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+              continue; // Retry
+            }
+          }
+        }
+
+        // For other errors, don't retry
+        break;
+
+      } catch (error) {
+        lastError = error;
+        retries++;
+        if (retries < maxRetries) {
+          const delay = 1000 * retries;
+          console.log(`⚠️  [zalo-service] Save reaction error, retrying in ${delay}ms (attempt ${retries}/${maxRetries})...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    // Log final error if all retries failed
+    if (retries >= maxRetries) {
+      if (lastError) {
+        console.error(`❌ [zalo-service] Failed to save reaction after ${maxRetries} retries:`, lastError.message);
+      } else if (response && !response.ok) {
+        const errorText = await response.text();
+        console.error(`❌ [zalo-service] Failed to save reaction after ${maxRetries} retries. Response:`, errorText);
+      }
+    }
+
+  } catch (error) {
+    console.error(`❌ [zalo-service] Error in handleIncomingReaction:`, error.message);
+    if (error.stack) {
+      console.error('   Stack:', error.stack);
+    }
+  }
+}
+
+/**
+ * Start WebSocket listener for a specific account
+ */
+async function startWebSocketListenerForAccount(accountId) {
+  const session = sessions.get(accountId);
+  const data = getSessionData(accountId);
+
+  if (!session) {
+    console.log(`⚠️  Cannot start listener for account ${accountId}: No session`);
+    return;
+  }
+
+  console.log(`🎧 Starting WebSocket listener for account ${accountId}...`);
+
+  try {
+    if (!session.listener || typeof session.listener.start !== 'function') {
+      console.log(`⚠️  No listener available for account ${accountId}`);
+      return;
+    }
+
+    const listener = session.listener;
+
+    // 🔥 CRITICAL FIX: ALWAYS remove all existing listeners FIRST
+    console.log(`🎧 [Account ${accountId}] Cleaning up existing listeners...`);
+    listener.removeAllListeners('message');
+    listener.removeAllListeners('reaction');
+    listener.removeAllListeners('group_event');
+    listener.removeAllListeners('error');
+    console.log(`🧹 [Account ${accountId}] Cleared all existing listeners`);
+
+    // 🔥 CRITICAL FIX: Stop existing listener connection if running
+    if (typeof listener.stopListening === 'function') {
+      console.log(`🛑 [Account ${accountId}] Stopping existing WebSocket connection...`);
+      try {
+        await listener.stopListening();
+        console.log(`✅ [Account ${accountId}] WebSocket connection stopped`);
+        
+        // Small delay to ensure clean shutdown
+        await new Promise(resolve => setTimeout(resolve, 500));
+      } catch (error) {
+        console.warn(`⚠️  [Account ${accountId}] Error stopping connection:`, error.message);
+      }
+    }
+
+    // Register new event handlers
+    console.log(`🎧 [Account ${accountId}] Registering new event handlers...`);
+
+    // Listen for messages
+    listener.on('message', async (message) => {
+      console.log(`🔔 [Account ${accountId}] *** MESSAGE EVENT RECEIVED ***`, {
+        type: message?.type,
+        threadId: message?.threadId,
+        isSelf: message?.isSelf,
+      });
+
+      // Track message for status ping
+      statusPing.trackMessageReceived(accountId);
+
+      // MULTI-SESSION: Parse message and forward to Laravel
+      console.log('📨 [WebSocket] Received Zalo message:', {
+        account_id: accountId,
+        type: message.type,
+        threadId: message.threadId,
+        isSelf: message.isSelf,
+        hasData: !!message.data,
+        msgId: message.data?.msgId,
+      });
+
+      try {
+        // Parse message similar to single-session version
+        const isGroup = message.type === 1; // ThreadType.Group
+        const messageData = message.data;
+
+        if (!messageData) {
+          console.warn('⚠️  No message data');
+          return;
+        }
+
+        // Extract text content
+        let text = '';
+        if (messageData.content) {
+          text = messageData.content;
+        } else if (messageData.msg) {
+          text = messageData.msg;
+        }
+
+        // Extract attachment if exists
+        let attachment = null;
+        if (messageData.href) {
+          attachment = {
+            type: 'image',
+            url: messageData.href
+          };
+        }
+
+        // Extract quote data if exists
+        let quoteData = null;
+        if (messageData.quote) {
+          // Convert BigNumber IDs to strings
+          const ownerIdStr = messageData.quote.ownerId ? String(messageData.quote.ownerId) : null;
+          const cliMsgIdStr = messageData.quote.cliMsgId ? String(messageData.quote.cliMsgId) : null;
+          const globalMsgIdStr = messageData.quote.globalMsgId ? String(messageData.quote.globalMsgId) : null;
+
+          quoteData = {
+            ownerId: ownerIdStr,
+            uidFrom: ownerIdStr,
+            cliMsgId: cliMsgIdStr,
+            globalMsgId: globalMsgIdStr,
+            msgId: globalMsgIdStr,
+            cliMsgType: messageData.quote.msgType || messageData.quote.cliMsgType,
+            msgType: messageData.quote.msgType || messageData.quote.cliMsgType,
+            msg: messageData.quote.content || messageData.quote.msg || '',
+            content: messageData.quote.content || messageData.quote.msg || '',
+          };
+        }
+
+        // Convert message IDs to strings
+        const msgId = messageData.msgId?.toString() || null;
+        const realMsgId = messageData.realMsgId?.toString() || null;
+        const cliMsgId = messageData.cliMsgId?.toString() || null;
+        const globalMsgId = messageData.globalMsgId?.toString() || msgId || realMsgId;
+        const primaryMessageId = msgId || realMsgId || cliMsgId || null;
+
+        // Extract sender information (important for group messages)
+        const senderId = messageData.uidFrom ? String(messageData.uidFrom) : null;
+        const senderName = messageData.dName || messageData.displayName || null;
+
+        const event = {
+          type: 'message',
+          userId: isGroup ? null : message.threadId,
+          groupId: isGroup ? message.threadId : null,
+          text: text,
+          content: text,
+          messageId: primaryMessageId,
+          id: primaryMessageId,
+          cliMsgId: cliMsgId,
+          globalMsgId: globalMsgId,
+          realMsgId: realMsgId,
+          allMessageIds: {
+            msgId: msgId,
+            cliMsgId: cliMsgId,
+            realMsgId: realMsgId,
+            globalMsgId: globalMsgId,
+          },
+          senderId: senderId,
+          senderName: senderName,
+          attachment: attachment,
+          quote: quoteData,
+          isSelf: message.isSelf,
+          timestamp: messageData.ts ? new Date(parseInt(messageData.ts)).toISOString() : new Date().toISOString()
+        };
+
+        // Forward to Laravel webhook
+        await handleIncomingMessage(accountId, event);
+
+      } catch (parseError) {
+        console.error(`❌ [Account ${accountId}] Error parsing message:`, parseError);
+      }
+    });
+
+    // Listen for reactions
+    listener.on('reaction', (reaction) => {
+      console.log(`😊 [Account ${accountId}] *** REACTION EVENT RECEIVED ***`, {
+        hasData: !!reaction,
+        dataKeys: reaction?.data ? Object.keys(reaction.data) : null,
+        timestamp: new Date().toISOString(),
+      });
+
+      const reactionIcon = reaction.data?.content?.rIcon || reaction.data?.rIcon;
+
+      // Extract message ID - reaction.data.msgId is the reaction's own ID, NOT the message ID!
+      // The actual message being reacted to is in content.rMsg[0].gMsgID (globalMsgId) or cMsgID (cliMsgId)
+      let msgId = null;
+      let cliMsgId = null;
+
+      // PRIORITY: Extract from content.rMsg[0] - this contains the actual message IDs
+      if (reaction.data?.content?.rMsg && Array.isArray(reaction.data.content.rMsg) && reaction.data.content.rMsg.length > 0) {
+        const rMsg = reaction.data.content.rMsg[0];
+
+        // gMsgID is the global message ID (msgId from Zalo server) - THIS IS THE PRIMARY ID
+        if (rMsg.gMsgID) {
+          msgId = rMsg.gMsgID.toString();
+        }
+        // cMsgID is the client message ID (cliMsgId)
+        if (rMsg.cMsgID) {
+          cliMsgId = rMsg.cMsgID.toString();
+        }
+
+        // Fallback: Try other field names (case variations)
+        if (!msgId && rMsg.gMsgId) {
+          msgId = rMsg.gMsgId.toString();
+        }
+        if (!msgId && rMsg.msgId) {
+          msgId = rMsg.msgId.toString();
+        }
+        if (!msgId && rMsg.cMsg) {
+          msgId = rMsg.cMsg.toString();
+        }
+        if (!cliMsgId && rMsg.cMsgId) {
+          cliMsgId = rMsg.cMsgId.toString();
+        }
+        if (!cliMsgId && rMsg.cliMsgId) {
+          cliMsgId = rMsg.cliMsgId.toString();
+        }
+      }
+
+      // Fallback: If still no IDs found, try from reaction.data (but these are usually reaction IDs, not message IDs)
+      if (!msgId) {
+        msgId = reaction.data?.msgId?.toString() || null;
+      }
+      if (!cliMsgId) {
+        cliMsgId = reaction.data?.cliMsgId?.toString() || null;
+      }
+
+      const threadId = reaction.threadId?.toString();
+
+      console.log(`😊 [Account ${accountId}] Received Zalo reaction:`, {
+        msgId: msgId,
+        cliMsgId: cliMsgId,
+        uidFrom: reaction.data?.uidFrom?.toString(),
+        reactionIcon: reactionIcon,
+        threadId: threadId,
+        isGroup: reaction.isGroup,
+        timestamp: new Date().toISOString(),
+        rawData: JSON.stringify(reaction.data).substring(0, 500), // Log more data for debugging
+        hasRMsg: !!(reaction.data?.content?.rMsg),
+        rMsgLength: reaction.data?.content?.rMsg?.length || 0,
+        rMsgData: reaction.data?.content?.rMsg?.[0] || null, // Log rMsg[0] for debugging
+      });
+
+      // Handle reaction - save to Laravel
+      handleIncomingReaction(accountId, {
+        type: 'reaction',
+        userId: reaction.isGroup ? null : threadId,
+        groupId: reaction.isGroup ? threadId : null,
+        messageId: msgId,
+        cliMsgId: cliMsgId,
+        userIdFrom: reaction.data?.uidFrom?.toString(),
+        reactionIcon: reactionIcon, // Use the extracted reactionIcon
+        reactionType: reaction.data?.content?.rType || reaction.data?.rType || 0,
+        reactionSource: reaction.data?.content?.source || reaction.data?.source || 0,
+        reactionData: reaction.data,
+        timestamp: reaction.data?.ts ? new Date(parseInt(reaction.data.ts)).toISOString() : new Date().toISOString()
+      }).catch(error => {
+        console.error(`❌ [Account ${accountId}] Failed to handle incoming reaction:`, error.message);
+        if (error.stack) {
+          console.error('   Stack:', error.stack);
+        }
+      });
+    });
+
+    // Listen for connection events
+    listener.on('connected', () => {
+      console.log(`✅ [Account ${accountId}] WebSocket connected`);
+    });
+
+    listener.on('disconnected', (reason) => {
+      console.log(`⚠️  [Account ${accountId}] WebSocket disconnected:`, reason);
+    });
+
+    listener.on('closed', (reason) => {
+      console.log(`⚠️  [Account ${accountId}] WebSocket closed:`, reason);
+    });
+
+    listener.on('error', (error) => {
+      const errorMessage = error?.message || String(error);
+      if (!errorMessage.includes('closed before the connection was established') &&
+          !errorMessage.includes('WebSocket was closed')) {
+        console.error(`❌ [Account ${accountId}] WebSocket error:`, errorMessage);
+      }
+    });
+
+    // Start the listener (this maintains WebSocket connection)
+    console.log(`🎧 [Account ${accountId}] Starting listener.start()...`);
+    listener.start({ retryOnClose: true });
+
+    updateSessionData(accountId, { wsListener: true });
+    console.log(`✅ WebSocket listener started for account ${accountId}`);
+
+  } catch (error) {
+    console.error(`❌ Failed to start listener for account ${accountId}:`, error);
+  }
+}
+
+/**
+ * Stop all WebSocket listeners
+ */
+async function stopWebSocketListener() {
+  console.log('🛑 Stopping WebSocket listeners for all accounts...');
+
+  for (const [accountId, session] of sessions.entries()) {
+    try {
+      if (session.listener && typeof session.listener.stopListening === 'function') {
+        await session.listener.stopListening();
+        console.log(`   Stopped listener for account ${accountId}`);
+      }
+    } catch (error) {
+      console.error(`   Error stopping listener for account ${accountId}:`, error.message);
+    }
+  }
+}
+
+// ============================================================================
+// CREDENTIALS MANAGEMENT
+// ============================================================================
+
+/**
+ * Save credentials for a specific account
+ */
+async function saveCredentialsForAccount(accountId, cookie) {
+  console.log(`💾 Saving credentials for account ${accountId}...`);
+
+  // Save to sessions directory
+  ensureSessionsDir();
+  const sessionFile = path.join(getSessionsDir(), `${getSessionId(accountId)}.json`);
+
+  try {
+    const credentialsData = {
+      accountId: accountId,
+      cookie: cookie,
+      imei: process.env.ZALO_IMEI || '',
+      userAgent: process.env.ZALO_USER_AGENT || '',
+      savedAt: new Date().toISOString()
+    };
+
+    fs.writeFileSync(sessionFile, JSON.stringify(credentialsData, null, 2));
+    console.log(`   ✅ Credentials saved to: ${sessionFile}`);
+  } catch (error) {
+    console.error(`   ❌ Failed to save credentials: ${error.message}`);
+  }
+}
+
+// ============================================================================
+// EXPORTS
+// ============================================================================
+
+module.exports = {
+  // Initialization
+  initializeZalo,
+
+  // Session management
+  isAccountReady,
+  isZaloReady: () => isAccountReady(), // Backward compatibility
+  switchAccount,
+  getAllSessions,
+  disconnectAccount,
+  getZaloClient,
+  getSession,
+
+  // Multi-session specific
+  sessions,
+  sessionData,
+  accountToZaloId, // Session sharing: accountId -> zaloId mapping
+  getActiveAccountId: () => activeAccountId,
+  setActiveAccountId: (id) => { activeAccountId = id; },
+
+  // Keep-alive
+  stopKeepAlive,
+
+  // WebSocket
+  stopWebSocketListener,
+
+  // Health monitoring
+  getHealthStatus,
+  getAllHealthStatus,
+  healthMonitors,
+
+  // Session restore helpers
+  startKeepAliveForAccount,
+  startWebSocketListenerForAccount,
+  startHealthMonitorForAccount,
+};
+
+
+
+// ============================================
+// QR REFRESH MONITOR - FIXED VERSION 2
+// Automatically resend QR to Telegram when it expires
+// ============================================
+const QR_REFRESH_INTERVAL = 90000; // Check every 90 seconds
+const qrMonitorIntervals = new Map();
+let lastQrMtime = new Map();
+
+/**
+ * Start monitoring QR file changes for an account
+ */
+function startQRMonitor(accountId) {
+  if (qrMonitorIntervals.has(accountId)) {
+    console.log('[QRMonitor] Already monitoring account ' + accountId);
+    return;
+  }
+
+  const qrPath = path.join(__dirname, '..', 'qr.png');
+  
+  console.log('[QRMonitor] Starting QR refresh monitor for account ' + accountId);
+  
+  // Initialize last mtime
+  try {
+    if (fs.existsSync(qrPath)) {
+      lastQrMtime.set(accountId, fs.statSync(qrPath).mtimeMs);
+    }
+  } catch (e) {
+    lastQrMtime.set(accountId, 0);
+  }
+
+  const interval = setInterval(async () => {
+    try {
+      // Check if QR file exists and was modified
+      if (fs.existsSync(qrPath)) {
+        const stats = fs.statSync(qrPath);
+        const currentMtime = stats.mtimeMs;
+        const lastMtime = lastQrMtime.get(accountId) || 0;
+
+        // If file was modified since last check (with 5s buffer to avoid duplicates)
+        if (currentMtime > lastMtime && (currentMtime - lastMtime) > 5000) {
+          console.log('[QRMonitor] New QR detected for account ' + accountId + ', sending to Telegram...');
+          
+          // Pass FILE PATH instead of data URL
+          const success = await telegram.sendQRCode(accountId, qrPath);
+          
+          if (success) {
+            console.log('[QRMonitor] ✅ QR sent to Telegram for account ' + accountId);
+          } else {
+            console.log('[QRMonitor] ⚠️ QR not sent for account ' + accountId + ' (not configured or error)');
+          }
+          
+          lastQrMtime.set(accountId, currentMtime);
+        }
+      }
+    } catch (error) {
+      console.warn('[QRMonitor] Error checking QR for account ' + accountId + ':', error.message);
+    }
+  }, QR_REFRESH_INTERVAL);
+
+  qrMonitorIntervals.set(accountId, interval);
+}
+
+/**
+ * Stop QR monitor for an account
+ */
+function stopQRMonitor(accountId) {
+  const interval = qrMonitorIntervals.get(accountId);
+  if (interval) {
+    clearInterval(interval);
+    qrMonitorIntervals.delete(accountId);
+    lastQrMtime.delete(accountId);
+    console.log('[QRMonitor] Stopped for account ' + accountId);
+  }
+}
+
+module.exports.startQRMonitor = startQRMonitor;
+module.exports.stopQRMonitor = stopQRMonitor;

@@ -1,0 +1,108 @@
+===================================================================
+         BÁO CÁO SỬA LỖI BRANCH ASSIGNMENT
+===================================================================
+
+NGÀY: 2025-12-14 23:55:05
+
+1. VẤN ĐỀ PHÁT HIỆN
+-------------------------------------------------------------------
+- User: user00129@songthuy.edu.vn (MINH TÂM)
+- Hiện tượng: Đăng nhập vào branch "Thống Nhất" (ID=2) 
+  thay vì "Yên Tâm" (ID=1)
+- Nguyên nhân: Student record có branch_id=2 nhưng lớp học 
+  "IELTS K1 YT" thuộc branch_id=1
+
+2. NGUYÊN NHÂN GỐC RỄ
+-------------------------------------------------------------------
+a) Lỗi thiết kế database:
+   - Bảng class_students.student_id đang tham chiếu tới users.id
+   - Đáng lẽ phải tham chiếu tới students.id
+   
+b) Lỗi dữ liệu:
+   - 53 học viên có student.branch_id không khớp với branch của lớp
+   - Tất cả đều bị gán nhầm vào branch "Thống Nhất" (ID=2)
+   - Trong khi các lớp của họ thuộc branch "Yên Tâm" (ID=1)
+
+c) Lỗi logic code (ĐÃ SỬA):
+   - Code login chỉ kiểm tra branch_user (employees)
+   - Không kiểm tra students và parents table
+   - Không có fallback về NULL nếu không có branch
+
+3. THỐNG KÊ
+-------------------------------------------------------------------
+Tổng số học viên active:             280
+Học viên có branch SAI:               53  ← ĐÃ SỬA
+Học viên không có lớp:                97  ← CẦN KIỂM TRA
+
+Chi tiết học viên đã sửa:
+- Tất cả 53 học viên bị gán nhầm từ Thống Nhất → Yên Tâm
+- Không có lỗi trong quá trình sửa
+- Thành công 100%
+
+4. CÁC THAY ĐỔI CODE ĐÃ THỰC HIỆN
+-------------------------------------------------------------------
+
+File: routes/api.php (Login endpoint)
+- ✓ Thêm logic kiểm tra students table trước
+- ✓ Thêm logic kiểm tra parents table 
+- ✓ Cuối cùng mới kiểm tra branch_user (employees)
+- ✓ Trả về NULL nếu không có branch
+
+File: routes/api.php (/user endpoint)  
+- ✓ Áp dụng cùng logic ưu tiên: students → parents → employees
+
+File: app/Models/User.php (getPrimaryBranchIdAttribute)
+- ✓ Cập nhật accessor theo thứ tự ưu tiên mới
+
+File: resources/js/stores/auth.js (login action)
+- ✓ Xóa localStorage khi branch_id = null (không giữ giá trị cũ)
+
+File: resources/js/components/BranchSwitcher.vue
+- ✓ Ưu tiên backend's current_branch_id thay vì localStorage
+- ✓ Xóa localStorage khi không có branches
+
+5. DỮ LIỆU ĐÃ SỬA
+-------------------------------------------------------------------
+Đã cập nhật students.branch_id cho 53 học viên:
+
+user00129@songthuy.edu.vn         → Branch: Yên Tâm (MINH TÂM)
+user00130@songthuy.edu.vn         → Branch: Yên Tâm (MINH CHÂU)
+user00131@songthuy.edu.vn         → Branch: Yên Tâm (TÂM AN)
+user00132@songthuy.edu.vn         → Branch: Yên Tâm (MAI TRANG)
+... và 49 học viên khác
+
+6. KIỂM TRA KẾT QUẢ
+-------------------------------------------------------------------
+Test case: user00129@songthuy.edu.vn
+
+✓ Student record: branch_id = 1 (Yên Tâm)
+✓ Class enrollment: IELTS K1 YT (branch_id = 1)
+✓ Login simulation: Sẽ đăng nhập vào Yên Tâm
+✓ Branch khớp với lớp học!
+
+7. HÀNH ĐỘNG TIẾP THEO (KHUYẾN NGHỊ)
+-------------------------------------------------------------------
+1. User cần LOGOUT và LOGIN lại để áp dụng branch mới
+2. Xóa localStorage trên trình duyệt nếu vẫn còn lỗi
+3. Kiểm tra 97 học viên không có lớp (cần enrollment?)
+4. Cân nhắc sửa schema: class_students.student_id → students.id
+
+8. TỆP SCRIPTS ĐÃ TẠO (Trên VPS)
+-------------------------------------------------------------------
+/var/www/school/check_class_students.php       - Kiểm tra bảng class_students
+/var/www/school/verify_user_enrollments.php    - Xác minh enrollment
+/var/www/school/find_mismatched_students.php   - Tìm học viên sai branch
+/var/www/school/fix_student_branches.php       - Sửa branch cho học viên
+/var/www/school/test_login_branch.php          - Test logic login
+/var/www/school/mismatched_students.json       - Dữ liệu học viên đã sửa
+
+===================================================================
+                        KẾT LUẬN
+===================================================================
+✓ Đã sửa xong toàn bộ 53 học viên bị gán nhầm branch
+✓ Đã cập nhật code logic để ưu tiên students/parents
+✓ Đã deploy lên VPS và clear cache
+✓ User00129 giờ sẽ login vào đúng branch Yên Tâm
+
+→ KHUYẾN CÁO: User cần LOGOUT và LOGIN LẠI!
+===================================================================

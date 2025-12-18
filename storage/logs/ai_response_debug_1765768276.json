@@ -1,0 +1,673 @@
+```json
+{
+  "lesson_plan": {
+    "title": "Health - Review and Vocabulary",
+    "shape": "D",
+    "duration": 120,
+    "level": "Lower-Intermediate",
+    "lesson_aims": {
+      "communicative_outcome": "By the end of the lesson, students will be better able to describe health problems and symptoms using simple present tense and 'feel + adjective', give and ask for advice about common health problems using 'should/shouldn't', and talk about their own health conditions and understand others' health issues",
+      "linguistic_aim": "Students will have reviewed and consolidated their understanding of Simple Present tense for describing health states, 'feel + adjective' structure for expressing symptoms, and 'should/shouldn't' for giving health advice, along with vocabulary related to parts of the body, common illnesses, and remedies",
+      "productive_subskills": "speaking for accuracy when describing symptoms, using appropriate language to give health advice, and fluency in discussing health-related topics",
+      "receptive_subskills": "listening for specific information about health problems and reading for detail to identify symptoms and advice"
+    },
+    "stages": [
+      {
+        "stage_number": 1,
+        "stage_title": "Lead-in and Context Building",
+        "stage_description": "This stage generates interest in the topic of health and activates students' prior knowledge about health problems and visiting the doctor. Students discuss their experiences and begin using health-related vocabulary naturally.",
+        "procedures": [
+          {
+            "procedure_number": 1,
+            "procedure_name": "Warmer - Health Discussion",
+            "procedure_aim": "To generate interest in the topic of health and activate prior knowledge about health problems",
+            "total_timing": 8,
+            "procedure": {
+              "stage_content": "Teacher displays images of people looking unwell (holding head, holding stomach, looking tired, sneezing) and elicits what might be wrong with them. Students discuss in pairs when was the last time they felt sick and what was wrong.",
+              "instructions": "Look at these pictures. What do you think is wrong with these people? Now, talk with your partner: When was the last time you didn't feel well? What was wrong? What did you do?",
+              "icqs": "Are you writing or talking? (Talking) Are you talking about now or the past? (The past) How many questions do you discuss? (Three)",
+              "instruction_timing": 2,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Students look at the images and make predictions about health problems. They then discuss their own experiences with illness in pairs, sharing when they were last sick, what symptoms they had, and what they did about it.",
+              "monitoring_points": "Teacher monitors to check students are using past tense appropriately, note any interesting stories to use in feedback, identify vocabulary gaps related to health that will be addressed later, and check engagement levels.",
+              "task_timing": 4,
+              "task_interaction": "Ss-Ss",
+              "feedback": "Teacher nominates 2-3 students to share their partner's experience with the class. Teacher writes any interesting vocabulary on the board and praises good language use. Teacher uses this to transition: 'So, we all get sick sometimes. Today we're going to learn how to talk about health problems and give advice.'",
+              "feedback_timing": 2,
+              "feedback_interaction": "Ss-T",
+              "learner_problems": [
+                {
+                  "problem": "Students may lack vocabulary to describe their health problems",
+                  "solution": "Accept gestures and native language, then provide English words and write them on board for later reference"
+                },
+                {
+                  "problem": "Students may struggle with past tense forms",
+                  "solution": "Gently correct by recasting their sentences correctly, but don't focus on this as it's not the lesson aim"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Students may say they never get sick or can't remember",
+                  "solution": "Prompt with questions: 'What about a cold? A headache? Feeling tired?' or allow them to discuss family members"
+                }
+              ]
+            }
+          },
+          {
+            "procedure_number": 2,
+            "procedure_name": "Vocabulary Pre-teach - Body Parts",
+            "procedure_aim": "To pre-teach essential body parts vocabulary that students will need to understand the listening text and describe symptoms",
+            "total_timing": 10,
+            "procedure": {
+              "stage_content": "Teacher presents key body parts vocabulary through visual aids and checks understanding. Students practice pronunciation chorally and individually, then complete a quick labeling task to consolidate.",
+              "instructions": "I'm going to show you some body parts. Listen and repeat. Then you'll label a diagram with your partner. You have 3 minutes.",
+              "icqs": "Are you working alone or with a partner? (Partner) How long do you have? (3 minutes) Are you writing full sentences? (No, just labels)",
+              "instruction_timing": 2,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Teacher shows flashcards or uses a body diagram to present: head, throat, stomach, back, arm, leg, ear, tooth/teeth, eye. Students repeat chorally and individually. Teacher then distributes handouts with a blank body diagram and word bank. Students work in pairs to label the diagram. Early finishers can test each other by pointing and asking 'What's this?'",
+              "monitoring_points": "Check pronunciation, especially 'th' sounds in 'throat' and 'teeth'. Ensure students are spelling correctly. Note any persistent pronunciation problems to address in feedback. Check that pairs are collaborating, not just copying.",
+              "task_timing": 6,
+              "task_interaction": "Ss-Ss",
+              "feedback": "Teacher displays answer key on board or screen. Students check their answers. Teacher drills any problematic pronunciation again. Quick concept check: Teacher points to own body parts and students call out the word. This creates energy and confirms understanding.",
+              "feedback_timing": 2,
+              "feedback_interaction": "T-Ss",
+              "learner_problems": [
+                {
+                  "problem": "Students may confuse 'finger' and 'toe' if both are included",
+                  "solution": "Use clear gestures and perhaps teach the phrase 'fingers on hands, toes on feet'"
+                },
+                {
+                  "problem": "Pronunciation of 'throat' and 'tooth/teeth' may be difficult",
+                  "solution": "Drill these words separately, model mouth position, and allow extra repetition"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Task may be too easy for stronger students",
+                  "solution": "Have extension ready: 'Can you think of any other body parts?' or 'Make sentences: My ___ hurts.'"
+                }
+              ]
+            }
+          },
+          {
+            "procedure_number": 3,
+            "procedure_name": "Vocabulary Pre-teach - Health Problems",
+            "procedure_aim": "To pre-teach language clarifiers (health problems vocabulary) that may block comprehension of the listening text",
+            "total_timing": 12,
+            "procedure": {
+              "stage_content": "Teacher introduces common health problems and symptoms through matching and discussion activities. Students learn to describe symptoms using have/feel patterns.",
+              "instructions": "Look at these words and pictures. Match the health problem to the picture. Then check with your partner. You have 4 minutes.",
+              "icqs": "Are you matching words to what? (Pictures) Do you work alone first? (Yes, then check with partner) How much time? (4 minutes)",
+              "instruction_timing": 2,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Teacher distributes handout with images depicting: a headache, a cold, a cough, a fever, a stomachache, a backache, a toothache, tired/exhausted. Students match vocabulary to images individually, then compare with a partner. After checking answers, teacher presents the language patterns: 'I have a headache/cold/cough/fever' and 'I feel tired/sick'. Teacher models pronunciation and students repeat chorally and individually.",
+              "monitoring_points": "Monitor to see which items students struggle with. Check if students know the difference between 'have' and 'feel' structures. Note any L1 interference or false cognates. Observe if students are genuinely checking together or just waiting.",
+              "task_timing": 7,
+              "task_interaction": "Ss-Ss",
+              "feedback": "Teacher goes through answers, displaying correct matches on screen. For each health problem, teacher elicits or provides the sentence: 'I have a ___' or 'I feel ___'. Teacher drills pronunciation, paying attention to stress patterns: 'HEADache', 'STOMachache', 'TOOTHache'. Teacher does quick concept checking: mimes having a headache and elicits 'She has a headache' to confirm understanding.",
+              "feedback_timing": 3,
+              "feedback_interaction": "T-Ss",
+              "learner_problems": [
+                {
+                  "problem": "Students may confuse 'ache' words (headache, stomachache, toothache, backache)",
+                  "solution": "Highlight the pattern: body part + ache. Practice with gestures. Create a quick drill: teacher says body part, students say the 'ache' word"
+                },
+                {
+                  "problem": "Students might not understand the difference between 'have' and 'feel'",
+                  "solution": "Explain briefly: 'have' = specific illness/pain, 'feel' = general state/how you are. Give examples: 'I have a cold' (specific), 'I feel terrible' (general)"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Some images might be ambiguous",
+                  "solution": "Accept reasonable answers and discuss why an image could represent different things, then clarify the intended meaning"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "stage_number": 2,
+        "stage_title": "Text-Based Discovery",
+        "stage_description": "Students engage with a listening text about people describing their health problems. This stage provides context for noticing target language (Simple Present for describing health, feel + adjective) and prepares for language analysis.",
+        "procedures": [
+          {
+            "procedure_number": 4,
+            "procedure_name": "Pre-Listening - Prediction Task",
+            "procedure_aim": "To engage students with the listening context and activate schema about visiting a doctor",
+            "total_timing": 5,
+            "procedure": {
+              "stage_content": "Teacher sets context of people calling a doctor's office to make appointments. Students predict what health problems they might hear about.",
+              "instructions": "You're going to listen to three people calling a doctor's office. They're not feeling well. What health problems do you think you'll hear? Discuss with your partner and write down three predictions.",
+              "icqs": "How many people are calling? (Three) What are you writing? (Health problems we think we'll hear) Are you listening now? (No, just predicting)",
+              "instruction_timing": 1,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Students discuss in pairs and write down three health problems they predict they will hear in the recording. This activates their schema and prepares them to listen for specific information.",
+              "monitoring_points": "Ensure students are using the vocabulary from the previous stage. Check that they understand the context. Note predictions to refer back to after listening.",
+              "task_timing": 3,
+              "task_interaction": "Ss-Ss",
+              "feedback": "Teacher elicits a few predictions from different pairs and writes them on the board. Teacher doesn't confirm or deny predictions yet, building anticipation for the listening.",
+              "feedback_timing": 1,
+              "feedback_interaction": "Ss-T",
+              "learner_problems": [
+                {
+                  "problem": "Students may not understand 'doctor's office' context",
+                  "solution": "Show a picture or mime making a phone call and saying 'I need to see the doctor'"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Students might struggle to predict without more context",
+                  "solution": "Prompt: 'Think about common health problems. What do people usually go to the doctor for?'"
+                }
+              ]
+            }
+          },
+          {
+            "procedure_number": 5,
+            "procedure_name": "While-Listening - Listening for Gist",
+            "procedure_aim": "To develop listening for gist and to familiarize students with the overall content of the text",
+            "total_timing": 8,
+            "procedure": {
+              "stage_content": "Students listen to three short conversations between patients and a receptionist at a doctor's office. They identify the main health problem each person has.",
+              "instructions": "Listen to the three conversations. What is the main health problem for each person? Write Person 1, Person 2, Person 3, and the health problem. Don't worry about details yet, just the main problem.",
+              "icqs": "How many conversations? (Three) Are you writing everything? (No, just the main health problem) Do you need to understand every word? (No)",
+              "instruction_timing": 1,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Students listen to the audio once and write down the main health problem for each caller. The script includes: Person 1 - has a terrible headache and feels dizzy; Person 2 - has a bad cough and sore throat; Person 3 - has a stomachache and feels sick. Students compare their answers briefly with a partner after listening.",
+              "monitoring_points": "Observe students' reactions while listening to gauge difficulty level. Note if any students seem lost or confused. After listening, monitor pair discussions to see if they caught the main ideas.",
+              "task_timing": 5,
+              "task_interaction": "Ss-text",
+              "feedback": "Teacher elicits answers from students. Writes on board: Person 1 - headache, Person 2 - cough/sore throat, Person 3 - stomachache. Teacher confirms which predictions were correct. Praises successful listening.",
+              "feedback_timing": 2,
+              "feedback_interaction": "Ss-T",
+              "learner_problems": [
+                {
+                  "problem": "Students may try to understand every word and get frustrated",
+                  "solution": "Remind them before listening that they only need the main idea, not every detail. Reassure them they will listen again"
+                },
+                {
+                  "problem": "Weaker students may not catch any health problems",
+                  "solution": "Allow pair checking to help them. Be ready to play recording again if needed"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Audio quality may be poor or speed too fast",
+                  "solution": "Test audio before class. Be prepared to replay sections or slow down if technology allows"
+                }
+              ]
+            }
+          },
+          {
+            "procedure_number": 6,
+            "procedure_name": "While-Listening - Listening for Specific Information",
+            "procedure_aim": "To develop listening for specific information and to expose students to target language in context (Simple Present, feel + adjective, should for advice)",
+            "total_timing": 12,
+            "procedure": {
+              "stage_content": "Students listen again to the three conversations and complete a detailed information gap task, noting specific symptoms and advice given.",
+              "instructions": "Listen again. This time, complete the table with more information. What other symptoms does each person mention? What advice does the receptionist give? You can write short notes, not full sentences.",
+              "icqs": "Are you listening for the same information? (No, more details) Do you write full sentences? (No, short notes) What two things are you listening for? (Symptoms and advice)",
+              "instruction_timing": 2,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Teacher distributes handout with a table: columns for Person, Main Problem, Other Symptoms, Advice. Students listen and fill in the table. Key information includes: Person 1 - feels dizzy, can't concentrate; advice - should rest, should drink water, shouldn't use computer. Person 2 - feels tired, throat hurts; advice - should take cough medicine, should stay warm, shouldn't talk too much. Person 3 - feels terrible, back hurts too; advice - should eat light food, shouldn't eat spicy food, should see doctor soon. After listening, students compare answers in pairs.",
+              "monitoring_points": "Watch for students struggling to keep up with note-taking. Monitor pair discussions to see what information they caught and missed. Note any repeated misunderstandings to address in feedback.",
+              "task_timing": 7,
+              "task_interaction": "Ss-text",
+              "feedback": "Teacher goes through answers, playing relevant excerpts again if there's disagreement. Teacher writes key answers on board, naturally highlighting target language structures that appear: 'He feels dizzy', 'Her throat hurts', 'You should rest', 'You shouldn't use the computer'. Teacher doesn't explain grammar yet, just confirms meaning of what was said.",
+              "feedback_timing": 3,
+              "feedback_interaction": "T-Ss",
+              "learner_problems": [
+                {
+                  "problem": "Students may miss advice phrases as they might be quick",
+                  "solution": "Be prepared to play the recording a third time, or just the advice sections. Provide sentence starters: 'You should...' to guide listening"
+                },
+                {
+                  "problem": "Note-taking may be difficult while listening",
+                  "solution": "Pause the recording after each conversation to allow time to write. Model abbreviations: 'Dr.' for doctor, 'med' for medicine"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Table may be too complex to complete while listening",
+                  "solution": "Simplify to two columns: Symptoms and Advice. Or provide a partially completed table"
+                }
+              ]
+            }
+          },
+          {
+            "procedure_number": 7,
+            "procedure_name": "Post-Listening - Reaction and Personalization",
+            "procedure_aim": "To allow students to respond personally to the text content and transition toward language analysis",
+            "total_timing": 6,
+            "procedure": {
+              "stage_content": "Students discuss whether the advice given was good and what advice they would give for these health problems.",
+              "instructions": "Look at the advice the receptionist gave. Do you think it's good advice? What other advice would you give? Discuss in groups of three.",
+              "icqs": "Are you working in pairs or groups? (Groups of three) Are you thinking about the same advice or different advice? (We can agree or give different advice) Are you talking about grammar or health advice? (Health advice)",
+              "instruction_timing": 1,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Students work in groups of three to evaluate the advice from the listening and suggest additional advice for each health problem. This encourages critical thinking and allows freer use of 'should/shouldn't' before it's formally analyzed.",
+              "monitoring_points": "Listen for emergent use of 'should/shouldn't'. Note any creative advice or interesting discussions to highlight in feedback. Observe if students are all participating equally in groups. Listen for any errors with Simple Present forms when describing symptoms.",
+              "task_timing": 4,
+              "task_interaction": "Ss-Ss",
+              "feedback": "Teacher elicits some ideas from groups. Teacher writes any good advice suggestions on board using 'should/shouldn't' naturally. Teacher praises interesting ideas. Teacher sets up transition: 'You all have great ideas for health advice. Now let's look more carefully at the language we use to describe health problems and give advice.'",
+              "feedback_timing": 1,
+              "feedback_interaction": "Ss-T",
+              "learner_problems": [
+                {
+                  "problem": "Students might give advice in their L1 or use incorrect structures",
+                  "solution": "Accept the ideas and recast them correctly: 'So you think he should take medicine, good idea.' This provides models without interrupting fluency"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Students may struggle to think of additional advice",
+                  "solution": "Prompt with questions: 'What do you do when you have a headache? Should they see a doctor? What about medicine?'"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "stage_number": 3,
+        "stage_title": "Language Analysis and Practice",
+        "stage_description": "Students notice, discover, and practice the target language through guided discovery tasks. This stage focuses on Simple Present for describing health states, feel + adjective structure, and should/shouldn't for advice.",
+        "procedures": [
+          {
+            "procedure_number": 8,
+            "procedure_name": "Guided Discovery - Simple Present for Health States",
+            "procedure_aim": "To guide students to notice and understand how Simple Present is used to describe current health states and symptoms",
+            "total_timing": 15,
+            "procedure": {
+              "stage_content": "Teacher highlights example sentences from the listening text on the board and guides students through discovery questions to analyze meaning, form, and use of Simple Present for describing health.",
+              "instructions": "Look at these sentences from the listening. Work with your partner and answer these questions about the sentences. You have 6 minutes.",
+              "icqs": "Are you working alone or with a partner? (Partner) Are you just reading or answering questions? (Answering questions) How long do you have? (6 minutes)",
+              "instruction_timing": 2,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Teacher writes on board: 'My head hurts.', 'His throat hurts.', 'I have a headache.', 'She has a fever.', 'My back hurts.' Teacher distributes guided discovery worksheet with questions: 1) Are these sentences about the past, present, or future? 2) Are these temporary feelings or permanent states? 3) Look at the verbs 'hurts' and 'has'. When do we add -s? 4) Do we use these sentences to describe how someone looks or how they feel? Students discuss answers in pairs, referring back to the listening script if needed.",
+              "monitoring_points": "Listen to students' reasoning and discussion. Note if they understand the concept of present states vs. actions. Check if they recognize the third person -s pattern. Identify any confusion about form vs. meaning to address in feedback.",
+              "task_timing": 8,
+              "task_interaction": "Ss-Ss",
+              "feedback": "Teacher conducts whole-class feedback by eliciting answers to each question. For question 1: confirms these are present. For question 2: elicits that these are temporary (we don't always feel this way). For question 3: highlights that we add -s with he/she/it (third person singular). For question 4: clarifies we use these for both how someone looks and how they feel right now. Teacher writes on board: 'Simple Present for Health States: We use Simple Present to describe health problems happening now.' Teacher provides form: Subject + have/has + illness OR Subject + body part + hurts. Drills pronunciation: 'hurts' /hɜːts/, distinguishing from 'hurt' /hɜːt/.",
+              "feedback_timing": 5,
+              "feedback_interaction": "T-Ss",
+              "learner_problems": [
+                {
+                  "problem": "Students may confuse this with Present Continuous, thinking health states need 'is/are + -ing'",
+                  "solution": "Explain that we use Simple Present for states and feelings, not continuous. Show wrong example: 'I am having a headache' is incorrect"
+                },
+                {
+                  "problem": "Students may forget third person -s",
+                  "solution": "Drill several examples with he/she. Create a quick substitution drill: 'I have a cold' → 'She ___' (has a cold)"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Questions may be too abstract for some students",
+                  "solution": "Provide additional example sentences or allow use of L1 to discuss concepts, then translate back to English"
+                }
+              ]
+            }
+          },
+          {
+            "procedure_number": 9,
+            "procedure_name": "Guided Discovery - Feel + Adjective",
+            "procedure_aim": "To guide students to notice and understand the structure 'feel + adjective' for expressing how they feel physically or emotionally",
+            "total_timing": 12,
+            "procedure": {
+              "stage_content": "Teacher presents example sentences with 'feel' and guides students to discover the pattern and meaning through comparison and categorization tasks.",
+              "instructions": "Look at these sentences. Put the words after 'feel' into two groups: health words and emotion words. Then answer the questions with your partner.",
+              "icqs": "How many groups? (Two) What are you putting into groups? (Words after 'feel') Then what do you do? (Answer questions with partner)",
+              "instruction_timing": 2,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Teacher writes sentences on board: 'I feel sick.', 'I feel tired.', 'She feels dizzy.', 'He feels terrible.', 'I feel happy.', 'I feel better.' Students work in pairs to categorize the adjectives and answer questions: 1) What kind of words come after 'feel'? (verbs/nouns/adjectives?) 2) Can we say 'I feel sick' or must we say 'I feel sickly'? 3) Does 'feel' describe how we are inside or how we look outside? Students complete this categorization and discussion task.",
+              "monitoring_points": "Check that students correctly identify adjectives. Listen for understanding that we use the base adjective form, not adverb forms. Note any confusion about feel vs. other sensory verbs (look, seem).",
+              "task_timing": 6,
+              "task_interaction": "Ss-Ss",
+              "feedback": "Teacher elicits answers. Confirms that adjectives follow 'feel' (not adverbs). Health words: sick, tired, dizzy, terrible, better. Emotion words: happy. Teacher explains we use 'feel + adjective' to describe our physical or emotional state from the inside. Teacher contrasts with 'look + adjective' which is how we appear to others: 'I feel terrible' (how I experience it) vs. 'You look terrible' (how you appear to me). Teacher provides form on board: Subject + feel/feels + adjective. Drills pronunciation of 'feel' /fiːl/ and 'feels' /fiːlz/. Gives additional examples: feel good, feel awful, feel OK.",
+              "feedback_timing": 4,
+              "feedback_interaction": "T-Ss",
+              "learner_problems": [
+                {
+                  "problem": "Students might try to use 'feel' with nouns: 'I feel a headache'",
+                  "solution": "Clarify: we say 'I have a headache' (noun) but 'I feel sick' (adjective). Provide contrastive examples"
+                },
+                {
+                  "problem": "Students may confuse 'feel' with 'fill'",
+                  "solution": "Drill pronunciation carefully, showing long /iː/ sound in 'feel'. Write phonemic transcription if necessary"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Students may categorize 'terrible' as emotion rather than health",
+                  "solution": "Accept this as 'terrible' can be both. Explain it's a general negative adjective used for both physical and emotional states"
+                }
+              ]
+            }
+          },
+          {
+            "procedure_number": 10,
+            "procedure_name": "Guided Discovery - Should/Shouldn't for Advice",
+            "procedure_aim": "To guide students to understand the use, meaning, and form of should/shouldn't for giving health advice",
+            "total_timing": 15,
+            "procedure": {
+              "stage_content": "Teacher presents advice sentences from the listening and guides students through discovery questions to understand function, form, and usage of should/shouldn't.",
+              "instructions": "Read these advice sentences and answer the discovery questions. Work in pairs. You have 7 minutes.",
+              "icqs": "Are you working alone or in pairs? (Pairs) What are you doing with the sentences? (Answering discovery questions) How much time? (7 minutes)",
+              "instruction_timing": 2,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Teacher displays sentences: 'You should rest.', 'You should drink water.', 'He shouldn't use the computer.', 'You shouldn't eat spicy food.', 'She should see a doctor.' Students receive worksheet with questions: 1) Are these sentences giving advice, giving orders, or asking questions? 2) Is the advice about things that are good to do or bad to do or both? 3) What word comes after 'should' and 'shouldn't'? What is the form of this word? 4) Do we say 'should' the same for I/you/he/she/we/they? 5) What is the negative form? Students discuss and complete answers in pairs.",
+              "monitoring_points": "Monitor discussions to see if students understand the advice function. Check if they notice the base form of the verb after should. Listen for recognition that should doesn't change form with different subjects. Note any confusion about should vs. must.",
+              "task_timing": 8,
+              "task_interaction": "Ss-Ss",
+              "feedback": "Teacher conducts whole-class feedback. Elicits: 1) These give advice (not orders). 2) 'Should' = good advice, 'shouldn't' = bad idea, things to avoid. 3) Base form of verb comes after should/shouldn't (not infinitive with 'to', not -ing, not past). 4) 'Should' is the same for all persons (no -s for third person). 5) Negative is 'shouldn't' or 'should not'. Teacher writes on board: 'Should/Shouldn't for Advice - We use should/shouldn't to give advice about what is a good or bad idea.' Form: Subject + should/shouldn't + base verb. Teacher drills pronunciation: 'should' /ʃʊd/, 'shouldn't' /ˈʃʊdnt/, emphasizing the weak form in connected speech. Practices with substitution: 'You should rest' → 'He should rest', 'I should rest'.",
+              "feedback_timing": 5,
+              "feedback_interaction": "T-Ss",
+              "learner_problems": [
+                {
+                  "problem": "Students may confuse 'should' with 'must', thinking it's very strong",
+                  "solution": "Clarify that 'should' is softer than 'must'. Should = good advice, must = necessary/required. Give examples in context"
+                },
+                {
+                  "problem": "Students might add 'to' after should: 'should to rest'",
+                  "solution": "Drill several examples emphasizing no 'to': 'should rest', 'should go', 'should take'. Show this is wrong: 'should to rest' ✗"
+                },
+                {
+                  "problem": "Students may use infinitive or gerund: 'should resting' or 'should to rest'",
+                  "solution": "Highlight that only the base verb form follows should. Practice multiple examples"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Students may not see the difference between should and have to",
+                  "solution": "If this arises, briefly explain: 'have to' = necessary (external rule), 'should' = recommended (personal advice)"
+                }
+              ]
+            }
+          },
+          {
+            "procedure_number": 11,
+            "procedure_name": "Controlled Practice - Gap Fill Exercise",
+            "procedure_aim": "To provide controlled written practice of all three target structures (Simple Present health states, feel + adjective, should/shouldn't)",
+            "total_timing": 12,
+            "procedure": {
+              "stage_content": "Students complete a gap-fill exercise that requires them to use the correct form of target language in context, consolidating form and meaning.",
+              "instructions": "Complete the sentences with the correct form of the words in brackets or choose the correct option. Do it individually first, then check with your partner. You have 7 minutes.",
+              "icqs": "Do you work with a partner immediately? (No, alone first, then check) Are you writing full sentences or just the missing words? (Just the missing words) How long do you have? (7 minutes)",
+              "instruction_timing": 2,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Students receive handout with 12 sentences requiring target language: Examples include: 'My sister ___ (have) a terrible headache today.', 'I ___ (feel) very tired this morning.', 'His back ___ (hurt) when he sits down.', 'You ___ (should/rest) if you feel sick.', 'She ___ (shouldn't/go) to work with a fever.', 'They ___ (feel) dizzy after the exercise.', 'You ___ (should/drink) lots of water.' Students complete individually, then compare answers in pairs, justifying their choices.",
+              "monitoring_points": "Monitor individual work to identify common errors. Note if students are struggling with third person -s, adjective forms after feel, or base verb after should. During pair checking, listen to their explanations to gauge understanding.",
+              "task_timing": 8,
+              "task_interaction": "Ss-Ss",
+              "feedback": "Teacher goes through answers on board, eliciting answers from students and asking for justification: 'Why is it has and not have?' 'What comes after feel?' 'What form is the verb after should?' Teacher highlights any common errors observed during monitoring. Provides correction and additional examples if needed. Praises accurate use and good reasoning.",
+              "feedback_timing": 2,
+              "feedback_interaction": "T-Ss",
+              "learner_problems": [
+                {
+                  "problem": "Students may make third person -s errors consistently",
+                  "solution": "After feedback, do quick additional drill: give subject pronouns, students respond with correct form: 'I have' 'she ___' (has)"
+                },
+                {
+                  "problem": "Students may write 'feeling' instead of 'feel' in Simple Present",
+                  "solution": "Remind them this is state, not action continuous. Show contrast: 'I feel sick' (now, state) vs. 'I am feeling better' (gradual change)"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Exercise may be too easy or too difficult",
+                  "solution": "Have extension sentences ready for early finishers. For struggling students, allow them to refer to the form notes on the board"
+                }
+              ]
+            }
+          },
+          {
+            "procedure_number": 12,
+            "procedure_name": "Controlled Practice - Dialogue Completion",
+            "procedure_aim": "To provide controlled oral practice of target language in a contextualized dialogue format, focusing on accuracy",
+            "total_timing": 10,
+            "procedure": {
+              "stage_content": "Students complete and practice short dialogues about health problems, using all target structures, then perform them for accuracy practice.",
+              "instructions": "Complete these dialogues with your partner using the target language we learned. Then practice saying them. You have 5 minutes to complete and practice.",
+              "icqs": "Do you complete the dialogues alone? (No, with partner) After completing, what do you do? (Practice saying them) How much time in total? (5 minutes)",
+              "instruction_timing": 1,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Teacher distributes handout with 3 incomplete dialogues. Example: 'A: How do you ___? B: I ___ terrible. I ___ a headache and my throat ___. A: Oh no! You ___ see a doctor. You ___ go to work today.' Students work in pairs to complete the dialogues using appropriate target language. Then they practice saying the dialogues, switching roles. Teacher monitors for accurate form and natural pronunciation.",
+              "monitoring_points": "Listen for correct verb forms, especially third person -s. Check pronunciation of 'should', 'feel', 'hurts'. Note if students are using rising/falling intonation appropriately for advice giving. Identify pairs who are performing particularly well or struggling significantly.",
+              "task_timing": 7,
+              "task_interaction": "Ss-Ss",
+              "feedback": "Teacher selects 1-2 pairs to perform their dialogue for the class. After each performance, teacher gives positive feedback on accuracy and offers correction on any significant errors. Teacher highlights good use of target language: 'Great! You used should correctly there.' If time allows, teacher provides model pronunciation of key sentences.",
+              "feedback_timing": 2,
+              "feedback_interaction": "T-Ss",
+              "learner_problems": [
+                {
+                  "problem": "Students may feel shy about performing in front of class",
+                  "solution": "Make it low-stakes: 'Just read naturally, you don't need to act.' Only select volunteer pairs or those who performed well during monitoring"
+                },
+                {
+                  "problem": "Students may rush through dialogues without focusing on accuracy",
+                  "solution": "Remind them before starting that they should focus on using correct forms, not just completing quickly"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Dialogues may be completed too quickly",
+                  "solution": "Have additional dialogues ready or ask students to create their own dialogue using a similar structure"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "stage_number": 4,
+        "stage_title": "Functional Language and Fluency Practice",
+        "stage_description": "Students learn functional language for giving and responding to health advice, then use all learned language in freer, more communicative practice activities that prioritize fluency while maintaining accuracy.",
+        "procedures": [
+          {
+            "procedure_number": 13,
+            "procedure_name": "Functional Language - Advice Exchanges",
+            "procedure_aim": "To present and practice functional language for asking for advice, giving advice, and responding to advice in health contexts",
+            "total_timing": 12,
+            "procedure": {
+              "stage_content": "Teacher presents useful phrases for advice exchanges. Students practice these phrases through drilling and controlled substitution activities before using them more freely.",
+              "instructions": "Look at these useful phrases for talking about health advice. Listen and repeat. Then practice making exchanges with your partner using the prompts.",
+              "icqs": "First, what do we do? (Listen and repeat) Then what? (Practice with partner using prompts) Are you memorizing or using the phrases naturally? (Using naturally)",
+              "instruction_timing": 2,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Teacher presents functional language on board/handout: Asking for advice: 'What should I do?', 'Do you have any advice?', 'What do you think I should do?' Giving advice: 'You should...', 'I think you should...', 'If I were you, I'd...' (simplified as 'I recommend...'), 'Why don't you...?' Responding: 'That's a good idea.', 'OK, I'll try that.', 'Thanks for the advice.', 'Maybe, but...' Teacher drills each phrase chorally and individually, focusing on natural intonation for advice (falling intonation) and questions (rising intonation). Students then practice short exchanges in pairs using prompt cards: 'terrible headache', 'can't sleep', 'bad cold', 'stomachache'. They ask for advice and respond using functional phrases.",
+              "monitoring_points": "Listen for natural intonation patterns. Check that students are using the functional phrases, not just 'should' alone. Monitor that both partners are speaking equally. Note any pronunciation difficulties with question forms.",
+              "task_timing": 8,
+              "task_interaction": "Ss-Ss",
+              "feedback": "Teacher highlights good use of functional language heard during monitoring. Models any phrases that students struggled with. Provides brief appreciation: 'I heard lots of good exchanges! Many of you used Why don't you...? very naturally.' Addresses any significant pronunciation or intonation issues.",
+              "feedback_timing": 2,
+              "feedback_interaction": "T-Ss",
+              "learner_problems": [
+                {
+                  "problem": "Students might stick to just 'You should' instead of using variety",
+                  "solution": "Encourage variety: 'Try using a different phrase each time.' Monitor and prompt: 'Can you use Why don't you...?'"
+                },
+                {
+                  "problem": "Intonation for advice questions may sound rude if too falling",
+                  "solution": "Model the difference: flat 'You should go' vs. softer 'Maybe you should go?' Practice with different tones"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Prompt cards may limit creativity",
+                  "solution": "After practicing with prompts, allow students to discuss real health situations they or their family have experienced"
+                }
+              ]
+            }
+          },
+          {
+            "procedure_number": 14,
+            "procedure_name": "Freer Practice - Doctor Role-Play",
+            "procedure_aim": "To provide freer oral practice where students use all target language and functional phrases in a simulated doctor-patient interaction, focusing on fluency and communication",
+            "total_timing": 15,
+            "procedure": {
+              "stage_content": "Students participate in a role-play activity where they take turns being a patient with a health problem and a doctor giving advice. This integrates all target language in a realistic context.",
+              "instructions": "You're going to role-play a doctor's appointment. Student A, you're the patient. Choose a health problem from your card and describe your symptoms using the language we learned. Student B, you're the doctor. Listen and give advice using should/shouldn't. Then swap roles. You have 10 minutes total - about 4 minutes per role-play.",
+              "icqs": "Who speaks first - doctor or patient? (Patient) What does the patient describe? (Symptoms/how they feel) What does the doctor do? (Give advice) Do you swap roles? (Yes) How long for each role-play? (About 4 minutes)",
+              "instruction_timing": 2,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Teacher distributes role cards. Patient cards include: 'You have a terrible headache and feel dizzy. It started yesterday. You didn't sleep well.' Doctor cards include: 'Listen to the patient. Ask questions: How long? Any other symptoms? Then give 2-3 pieces of advice using should/shouldn't.' Students perform their role-plays in pairs. They must use Simple Present to describe symptoms, feel + adjective for their state, functional language to ask for/give advice, and should/shouldn't in their advice. After first role-play, students swap roles and repeat with different health problems.",
+              "monitoring_points": "Monitor for use of target language but avoid interrupting for small errors as this is fluency practice. Note good language use to highlight in feedback. Observe if students are expanding beyond the minimum requirements - asking follow-up questions, giving multiple pieces of advice. Identify any persistent errors to address later without naming students.",
+              "task_timing": 11,
+              "task_interaction": "Ss-Ss",
+              "feedback": "Teacher conducts feedback focused on communication success: 'Did everyone manage to describe their symptoms clearly? Did you understand your partner's advice?' Teacher highlights examples of excellent language use heard during monitoring: 'I heard someone say I feel dizzy and my head hurts - perfect use of both structures!' Teacher addresses 1-2 common errors noticed across multiple pairs without identifying specific students: 'I noticed we sometimes forgot the -s in hurts. Remember: my head hurts, his stomach hurts.' Praises creativity and fluency.",
+              "feedback_timing": 2,
+              "feedback_interaction": "T-Ss",
+              "learner_problems": [
+                {
+                  "problem": "Students may revert to basic language instead of using new structures",
+                  "solution": "During monitoring, prompt gently: 'How do you feel?' to encourage 'feel + adjective' or 'What should they do?' to encourage should/shouldn't"
+                },
+                {
+                  "problem": "Role-plays may be very short with minimal interaction",
+                  "solution": "Provide extension prompts on role cards: 'Ask about: how long? worse at night? eating OK?' to encourage longer interaction"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Students may finish too quickly",
+                  "solution": "Have extra role cards ready or ask them to create their own health problem scenario for a third role-play"
+                },
+                {
+                  "problem": "Some students may dominate while others are passive",
+                  "solution": "Assign clear roles and remind both must participate equally. Monitor and encourage quieter students"
+                }
+              ]
+            }
+          },
+          {
+            "procedure_number": 15,
+            "procedure_name": "Freer Practice - Health Problems Discussion",
+            "procedure_aim": "To provide fluency practice through authentic discussion about health habits, problems, and advice-giving in real-life contexts",
+            "total_timing": 13,
+            "procedure": {
+              "stage_content": "Students engage in a semi-structured discussion about health habits, common problems in their lives, and advice they would give each other. This is the most communicative stage, focusing on fluent use of all learned language.",
+              "instructions": "In groups of three or four, discuss these questions about health. Try to use the language we learned today - describe symptoms, talk about how you feel, and give each other advice. You have 10 minutes.",
+              "icqs": "How many people in your group? (Three or four) Are you discussing or writing? (Discussing) Should you use today's language? (Yes, try to) How long? (10 minutes)",
+              "instruction_timing": 2,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Teacher displays or distributes discussion prompts: 1) What health problems do students your age usually have? (stress, not enough sleep, eye problems from screens, etc.) 2) What do you do when you have a headache/cold/stomachache? 3) Do you think teenagers today have more health problems than before? Why? 4) What advice would you give to someone who feels stressed all the time? Students discuss in groups, using target language naturally. Teacher monitors but does not interrupt unless communication breaks down.",
+              "monitoring_points": "Monitor primarily for fluency and communication success, not accuracy. Note examples of effective communication and natural language use. Observe whether students are using the new structures or relying entirely on old language. Note any interesting content to bring up in feedback. Identify 3-4 language errors (across the class, not individual) to address in delayed feedback.",
+              "task_timing": 10,
+              "task_interaction": "Ss-Ss",
+              "feedback": "Teacher conducts content feedback first: asks groups to share interesting ideas or surprising opinions: 'What was the most interesting thing you discussed?' Then teacher provides delayed language feedback: writes 3-4 sentences heard during monitoring on the board (some correct, some with errors, anonymized) and asks class to identify and correct any errors. This focuses on accuracy without interrupting earlier fluency. Teacher ends with strong positive feedback: 'You all did excellent work today using the new language to talk about real health issues!'",
+              "feedback_timing": 1,
+              "feedback_interaction": "Ss-T",
+              "learner_problems": [
+                {
+                  "problem": "Students may avoid using new language and stick to comfortable structures",
+                  "solution": "During monitoring, encourage use by asking prompt questions: 'So how does that make you feel?' or 'What should people do about that?'"
+                },
+                {
+                  "problem": "Discussions may veer off-topic into L1 or non-health topics",
+                  "solution": "Monitor and gently redirect: 'That's interesting, but let's focus on health. What advice would you give?' Provide additional questions if needed"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Some groups may finish discussions very quickly",
+                  "solution": "Have follow-up questions ready: 'What health advice do your parents always give you? Do you follow it?' or 'Should schools do more to help with student health?'"
+                },
+                {
+                  "problem": "Discussions may be unbalanced with some students not participating",
+                  "solution": "Assign discussion roles: 'One person asks the first question, someone else the second question...' or use a talking token system"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "stage_number": 5,
+        "stage_title": "Communicative Outcome",
+        "stage_description": "Students complete a final communicative task that demonstrates their ability to use all learned language in an authentic, meaningful context with a real audience and purpose.",
+        "procedures": [
+          {
+            "procedure_number": 16,
+            "procedure_name": "Final Communicative Task - Health Advice Column",
+            "procedure_aim": "To provide an authentic communicative task where students use all target language to write and respond to health problem letters, demonstrating their learning in a real-world context",
+            "total_timing": 20,
+            "procedure": {
+              "stage_content": "Students write a letter describing a health problem (real or imagined), then exchange letters and write advice responses. This integrates all linguistic aims in an authentic, communicative format with a real reader.",
+              "instructions": "First, write a short letter to a health advice column. Describe a health problem - you can use a real problem or imagine one. Describe your symptoms using the language we learned. Then, you'll receive someone else's letter and write a reply giving advice. Use should/shouldn't and the functional language we practiced.",
+              "icqs": "What do you write first? (Letter describing a health problem) Is it about you or someone else? (Can be either, real or imagined) What do you do with your letter then? (Exchange it) What do you write next? (Reply with advice) Who will read your writing? (Another student)",
+              "instruction_timing": 2,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Students write their 'problem letters' (5-7 sentences) describing symptoms using Simple Present and feel + adjective. Example framework provided: 'Dear Health Advisor, I have a problem. I feel ___ and my ___ hurts. I also ___. This started ___. What should I do? Please help!' After writing, teacher collects letters, shuffles them, and redistributes to different students. Students then write advice responses (5-7 sentences) using should/shouldn't and functional language. Example framework: 'Dear ___, I think you should ___. You shouldn't ___. If I were you, I'd ___. I hope you feel better soon!' After completing, letters and responses are returned to original writers who read the advice they received.",
+              "monitoring_points": "During letter writing, monitor for accurate use of Simple Present forms and feel + adjective. Check that students are describing symptoms clearly. During advice writing, check for correct use of should/shouldn't and variety of functional language. Note examples of creative or particularly accurate language use. Ensure letters are appropriate and respectful.",
+              "task_timing": 16,
+              "task_interaction": "Ss-text",
+              "feedback": "Teacher asks several students to share: 'What advice did you receive? Was it good advice?' This creates authentic response to the written communication. Teacher invites 2-3 students to read their problem letter and advice response aloud if they're willing. Teacher provides positive feedback on successful communication: 'I can see you all understood each other's problems and gave thoughtful advice!' Teacher addresses any significant language patterns that need correction: 'I noticed some letters said feels sick instead of feel sick. Remember, I feel sick, he feels sick.' Teacher collects all writing for more detailed feedback later if desired.",
+              "feedback_timing": 2,
+              "feedback_interaction": "T-Ss",
+              "learner_problems": [
+                {
+                  "problem": "Students may struggle to write without speaking practice first",
+                  "solution": "Allow them to discuss their problem with a partner before writing, or provide sentence starters for each part of the letter"
+                },
+                {
+                  "problem": "Some students may not have real health problems to write about and struggle with imagination",
+                  "solution": "Provide a list of common health scenarios they can choose from: 'stressed about exams', 'can't sleep', 'gained weight', 'always tired'"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Writing may take longer than anticipated",
+                  "solution": "Set clear time limits: 'You have 7 minutes for your problem letter' and give time warnings. For slower writers, allow them to write shorter letters (4-5 sentences minimum)"
+                },
+                {
+                  "problem": "Some students may write inappropriate or very personal problems",
+                  "solution": "Before starting, clarify: 'Write about common health problems - headaches, stress, colds, tiredness. Keep it appropriate for classmates to read.' Monitor early writing to redirect if needed"
+                }
+              ]
+            }
+          },
+          {
+            "procedure_number": 17,
+            "procedure_name": "Lesson Review and Self-Assessment",
+            "procedure_aim": "To allow students to reflect on what they learned, assess their own progress, and provide closure to the lesson",
+            "total_timing": 8,
+            "procedure": {
+              "stage_content": "Teacher guides students through review of lesson objectives and students self-assess their confidence with each learning aim. This provides metacognitive reflection and helps teacher understand student progress.",
+              "instructions": "Let's think about what we learned today. Look at these lesson objectives. How confident do you feel about each one? Give yourself 1-5 stars for each objective. Then share with your partner what you feel most confident about and what you want to practice more.",
+              "icqs": "Are you thinking about what you learned? (Yes) How many stars means very confident? (5) How many means not confident? (1) Do you share with your partner? (Yes)",
+              "instruction_timing": 1,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Teacher displays the lesson aims on board: 1) I can describe health problems using Simple Present (My head hurts, I have a fever), 2) I can express how I feel using feel + adjective (I feel sick, I feel tired), 3) I can give and understand advice using should/shouldn't, 4) I can use functional language for advice exchanges. Students rate themselves 1-5 stars for each objective on their handout. They then discuss with a partner what they feel confident about and what they want to practice more. Teacher conducts brief whole-class sharing: 'What do you feel most confident about now?' and 'What would you like to practice more?'",
+              "monitoring_points": "Listen to student self-assessments to gauge overall class confidence and identify areas that may need review in future lessons. Note any students who express low confidence in key areas for additional support. Observe whether students can articulate what they learned.",
+              "task_timing": 5,
+              "task_interaction": "Ss-Ss",
+              "feedback": "Teacher acknowledges student reflections positively: 'It's great that you know what you want to practice more - that shows good learning!' Teacher provides brief summary: 'Today you learned three important ways to talk about health in English. You can now describe symptoms, express how you feel, and give advice. Great work!' Teacher assigns optional homework: 'If you want more practice, write about a time you or someone in your family was sick and what advice you would give.' Teacher thanks students for their participation and effort.",
+              "feedback_timing": 2,
+              "feedback_interaction": "T-Ss",
+              "learner_problems": [
+                {
+                  "problem": "Students may all rate themselves very high or very low due to cultural factors or modesty",
+                  "solution": "Emphasize this is for their own learning, not graded. Give example: 'I feel confident with describing symptoms (4 stars) but I want to practice feel + adjective more (3 stars)'"
+                },
+                {
+                  "problem": "Students may not remember what specific structures they learned",
+                  "solution": "Review each structure briefly with an example before asking for self-assessment"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Self-assessment may feel too formal or time-consuming at the end",
+                  "solution": "Simplify to: 'Thumbs up if you feel confident with describing health problems, thumbs middle if you're OK, thumbs down if you need more practice' for each objective"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
+```

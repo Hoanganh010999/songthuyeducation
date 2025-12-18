@@ -1,0 +1,638 @@
+```json
+{
+  "lesson_plan": {
+    "title": "Unit 1. Friends and Family",
+    "shape": "E",
+    "duration": 120,
+    "level": "Beginner",
+    "lesson_aims": {
+      "communicative_outcome": "By the end of the lesson, learners will be better able to read and understand short texts about people and their families, extracting key information about names, relationships, and personal descriptions.",
+      "linguistic_aim": "Students will have a better understanding of the present tense of be (I'm, They're, Is John...?), be + adjective, and vocabulary for greetings, introductions, names and spelling, adjectives to describe people, and family members.",
+      "productive_subskills": "accuracy in pronunciation of new vocabulary",
+      "receptive_subskills": "reading for gist, reading for specific information, and reading for detail"
+    },
+    "stages": [
+      {
+        "stage_number": 1,
+        "stage_title": "Warmer and Lead-in to Topic",
+        "stage_description": "Students are introduced to the topic of friends and family through visual prompts and personal connection activities to activate schema and generate interest in the reading text.",
+        "procedures": [
+          {
+            "procedure_number": 1,
+            "procedure_name": "Warmer - Family Photo Activity",
+            "procedure_aim": "To activate prior knowledge about families and introduce the lesson topic in a personalized way",
+            "total_timing": 8,
+            "procedure": {
+              "stage_content": "Teacher shows pictures of different families on the board and elicits basic vocabulary. Students then discuss their own families in pairs using simple language.",
+              "instructions": "Look at these pictures. Talk with your partner about your family. How many people are in your family? What are their names?",
+              "icqs": "Are you writing or talking? (Talking) Are you talking about my family or your family? (My family) How many minutes? (3 minutes)",
+              "instruction_timing": 1,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Students work in pairs discussing their families using simple present tense and family vocabulary they already know. They exchange information about family members and their names.",
+              "monitoring_points": "Listen for students using any family vocabulary correctly, note pronunciation issues with names and family words, identify students who may need encouragement to participate, observe if students are staying on task",
+              "task_timing": 5,
+              "task_interaction": "SS-Ss",
+              "feedback": "Teacher nominates 2-3 students to share one interesting thing they learned about their partner's family. Teacher writes key family words on the board that emerged naturally (mother, father, sister, brother).",
+              "feedback_timing": 2,
+              "feedback_interaction": "Ss-T",
+              "learner_problems": [
+                {
+                  "problem": "Students may lack basic family vocabulary to express themselves",
+                  "solution": "Have visual flashcards ready to support students who need vocabulary, allow use of L1 if necessary and provide English equivalent"
+                },
+                {
+                  "problem": "Students may be shy about sharing personal information",
+                  "solution": "Model the activity first with your own family, make it clear students can talk about any family they know"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Task may finish too quickly with beginner students",
+                  "solution": "Have follow-up questions ready: Where do they live? How old are they?"
+                },
+                {
+                  "problem": "Students may revert to L1 entirely",
+                  "solution": "Circulate and provide English phrases, encourage any English use positively"
+                }
+              ]
+            }
+          },
+          {
+            "procedure_number": 2,
+            "procedure_name": "Lead-in - Prediction from Pictures",
+            "procedure_aim": "To generate interest in the reading text and prepare students for the content through visual prediction",
+            "total_timing": 7,
+            "procedure": {
+              "stage_content": "Teacher shows pictures related to the reading text (photos of people in the text) and elicits predictions about who they are, their relationships, and what the text might be about.",
+              "instructions": "Look at these pictures. You will read about these people. Who are they? Are they friends? Are they family? What do you think?",
+              "icqs": "Are you reading now? (No) Are you guessing? (Yes) Are we looking at the pictures? (Yes)",
+              "instruction_timing": 1,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Students look at pictures from the text and discuss in pairs what they think the relationships are and what the text will be about. They make predictions based on visual clues like age, grouping, and setting.",
+              "monitoring_points": "Check students are making predictions and not trying to read yet, listen for use of family vocabulary, note if students are engaged with the visuals, monitor for equal participation in pairs",
+              "task_timing": 4,
+              "task_interaction": "SS-Ss",
+              "feedback": "Elicit predictions from the whole class. Accept all reasonable answers and write key ideas on the board. Build anticipation by not confirming or denying predictions - students will check when reading.",
+              "feedback_timing": 2,
+              "feedback_interaction": "Ss-T",
+              "learner_problems": [
+                {
+                  "problem": "Students may not have language to express predictions",
+                  "solution": "Provide sentence starters on board: I think they are..., Maybe they are..., They look..."
+                },
+                {
+                  "problem": "Students might try to read the text instead of predicting",
+                  "solution": "Only show pictures initially, keep text covered or out of view"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Pictures may not be clear enough to generate predictions",
+                  "solution": "Ask guiding questions: How old are they? Are they happy? Where are they?"
+                },
+                {
+                  "problem": "Students may make predictions too quickly",
+                  "solution": "Add more questions: What are their names? What do they do?"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "stage_number": 2,
+        "stage_title": "Pre-teaching Vocabulary",
+        "stage_description": "Essential vocabulary that may block comprehension is pre-taught using visual aids, concept checking, and pronunciation practice to ensure students can access the reading text.",
+        "procedures": [
+          {
+            "procedure_number": 3,
+            "procedure_name": "Vocabulary Pre-teaching - Family Members",
+            "procedure_aim": "To pre-teach key family vocabulary that is essential for understanding the reading text",
+            "total_timing": 12,
+            "procedure": {
+              "stage_content": "Teacher presents 8-10 key family vocabulary items using visuals, checks meaning through concept questions, and drills pronunciation focusing on accuracy. Words include: mother, father, sister, brother, son, daughter, husband, wife, parents, children.",
+              "instructions": "Look at this picture. Who is this person? This is a mother. Listen and repeat: mother.",
+              "icqs": "Not applicable for vocabulary presentation - CCQs used instead: Is this a man or woman? (woman) Does she have children? (yes)",
+              "instruction_timing": 1,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Students listen to teacher present each vocabulary item with visual support, respond to concept checking questions to show understanding, and practice pronunciation chorally and individually. Teacher writes words on board with simple family tree diagram.",
+              "monitoring_points": "Watch student mouths during pronunciation to identify specific sound difficulties, check all students are participating in choral drilling, note which words cause most difficulty, observe student engagement and comprehension through CCQ responses",
+              "task_timing": 9,
+              "task_interaction": "T-Ss",
+              "feedback": "Teacher provides immediate correction on pronunciation errors, models difficult sounds again, and uses finger highlighting for word stress. Students practice saying words until pronunciation is accurate.",
+              "feedback_timing": 2,
+              "feedback_interaction": "T-Ss",
+              "learner_problems": [
+                {
+                  "problem": "Students may confuse 'mother' and 'father' pronunciation due to similar vowel sounds",
+                  "solution": "Contrast the words directly, exaggerate the difference, use hand gestures to show mouth shape"
+                },
+                {
+                  "problem": "Students may struggle with 'th' sound in 'mother', 'father', 'brother'",
+                  "solution": "Model tongue placement, use mirror if available, accept approximation initially but keep modeling correctly"
+                },
+                {
+                  "problem": "Students may not understand the concept of 'parents' and 'children' as plural categories",
+                  "solution": "Use clear visuals showing multiple people, draw lines on family tree to show grouping"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Vocabulary stage may take too long if drilling each word individually",
+                  "solution": "Prioritize the 6 most essential words, drill others more quickly, combine some words"
+                },
+                {
+                  "problem": "Students may become passive during presentation",
+                  "solution": "Increase student involvement through gesture responses, quick pair checks, individual nominations"
+                }
+              ]
+            }
+          },
+          {
+            "procedure_number": 4,
+            "procedure_name": "Vocabulary Pre-teaching - Descriptive Adjectives",
+            "procedure_aim": "To pre-teach key adjectives needed to understand descriptions in the reading text",
+            "total_timing": 10,
+            "procedure": {
+              "stage_content": "Teacher presents 6-8 key descriptive adjectives using pictures of people and concept checking. Words include: young, old, tall, short, friendly, nice, kind, happy. Focus is on meaning and pronunciation.",
+              "instructions": "Look at this person. Is she young or old? She is young. Listen: young. Repeat: young.",
+              "icqs": "Not applicable for vocabulary presentation - CCQs used instead: Is she 5 years old or 80 years old? (5) Is this baby young? (yes) Is this grandma young? (no)",
+              "instruction_timing": 1,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Students observe visual examples of each adjective, answer concept checking questions to demonstrate understanding, participate in choral and individual pronunciation drilling. Teacher elicits opposites where possible (young/old, tall/short).",
+              "monitoring_points": "Check students can distinguish between similar concepts, monitor pronunciation of adjective endings, ensure all students can see visuals clearly, watch for comprehension through CCQ responses and facial expressions",
+              "task_timing": 7,
+              "task_interaction": "T-Ss",
+              "feedback": "Teacher confirms correct understanding through student responses to CCQs, corrects pronunciation errors immediately, and provides additional examples if students seem confused about any adjective.",
+              "feedback_timing": 2,
+              "feedback_interaction": "T-Ss",
+              "learner_problems": [
+                {
+                  "problem": "Students may confuse abstract adjectives like 'friendly', 'kind', 'nice'",
+                  "solution": "Use clear contextual examples, use gestures like smiling and handshaking, group similar meaning words together"
+                },
+                {
+                  "problem": "Students may mispronounce /ŋ/ sound in 'young'",
+                  "solution": "Model the sound clearly, contrast with /n/, have students touch their throat to feel the difference"
+                },
+                {
+                  "problem": "Students may not understand how adjectives combine with 'be'",
+                  "solution": "Show pattern on board: She is young, He is tall, provide sentence frames"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Too many new adjectives may overwhelm beginner students",
+                  "solution": "Reduce to 6 most essential adjectives, focus on concrete before abstract"
+                },
+                {
+                  "problem": "Students may already know some adjectives and become disengaged",
+                  "solution": "Move quickly through known items, focus drilling on unknown words, check understanding rather than assuming"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "stage_number": 3,
+        "stage_title": "Reading for Gist",
+        "stage_description": "Students read the text quickly to get the general idea and main topic, developing their ability to understand the overall meaning without focusing on every word.",
+        "procedures": [
+          {
+            "procedure_number": 5,
+            "procedure_name": "First Reading - Gist Task",
+            "procedure_aim": "To develop students' ability to read for general understanding and identify the main topic of the text",
+            "total_timing": 10,
+            "procedure": {
+              "stage_content": "Students read the text quickly (2-3 minutes) and answer a simple gist question such as 'What is the text about?' or 'Who are the people in the text?' They check their predictions from the lead-in.",
+              "instructions": "Now read the text quickly. You have 3 minutes. Don't worry about every word. Read and answer this question: Who are the people in this text? Then check with your partner.",
+              "icqs": "Are you reading slowly or quickly? (quickly) Are you reading every word? (no) How many minutes? (3) Do you answer the question? (yes)",
+              "instruction_timing": 2,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Students read the text individually and silently, focusing on understanding the general content. They identify who the people are and what their relationships are. After reading, they compare their answers with a partner before whole class feedback.",
+              "monitoring_points": "Ensure students are reading and not just looking at pictures, check students are not using dictionaries or stopping at every unknown word, observe reading speed to ensure they are skimming not detailed reading, note students who finish early or struggle to finish",
+              "task_timing": 6,
+              "task_interaction": "Ss-text",
+              "feedback": "Elicit answers from students about who the people are. Confirm correct answers and refer back to the predictions made earlier. Did we guess correctly? Write the main people and relationships on the board.",
+              "feedback_timing": 2,
+              "feedback_interaction": "Ss-T",
+              "learner_problems": [
+                {
+                  "problem": "Beginner students may try to understand every word and read very slowly",
+                  "solution": "Set strict time limit, remind students to focus only on the question, demonstrate skimming technique before they start"
+                },
+                {
+                  "problem": "Students may not understand what 'gist' means or what they are looking for",
+                  "solution": "Give very clear, simple question with example answer format, show what a gist answer looks like"
+                },
+                {
+                  "problem": "Students may finish at very different times",
+                  "solution": "Have early finishers check their prediction notes, prepare extension question: How many people are in the text?"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Text may be too difficult for true gist reading at beginner level",
+                  "solution": "Ensure gist question is very simple and can be answered by finding names and family words only"
+                },
+                {
+                  "problem": "Students may not read at all if overwhelmed by text",
+                  "solution": "Provide support by reading first few lines together, circle names in the text to help them locate key information"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "stage_number": 4,
+        "stage_title": "Reading for Specific Information",
+        "stage_description": "Students read the text again with more focus to find specific information and answer targeted questions about details in the text.",
+        "procedures": [
+          {
+            "procedure_number": 6,
+            "procedure_name": "Second Reading - Specific Information Task",
+            "procedure_aim": "To develop students' ability to scan the text for specific information and extract key details",
+            "total_timing": 15,
+            "procedure": {
+              "stage_content": "Students read the text again and answer 5-6 specific questions about names, ages, relationships, and other concrete details. Questions are True/False or simple Wh- questions with short answers.",
+              "instructions": "Read the text again. This time, read more carefully. Answer these questions. Write True or False, or write short answers. You have 5 minutes. Then check with your partner.",
+              "icqs": "Are you reading again? (yes) Are you writing answers? (yes) Are you working alone first? (yes) How many minutes? (5)",
+              "instruction_timing": 2,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Students read the text more carefully, scanning for specific information to answer comprehension questions. Questions focus on factual information clearly stated in the text. After completing individually, students compare answers in pairs.",
+              "monitoring_points": "Check students are finding answers in the text not guessing, monitor if students are stuck on particular questions, observe which questions cause most difficulty, ensure students are staying on task and not discussing in L1 excessively",
+              "task_timing": 10,
+              "task_interaction": "Ss-text",
+              "feedback": "Go through answers as a class. For each answer, ask students where they found the information in the text. Have students read relevant sentences aloud. Clarify any misunderstandings about the text content.",
+              "feedback_timing": 3,
+              "feedback_interaction": "Ss-T",
+              "learner_problems": [
+                {
+                  "problem": "Students may not understand the questions due to question vocabulary",
+                  "solution": "Pre-teach question words if needed (Who, What, How old), provide example answer for first question"
+                },
+                {
+                  "problem": "Students may copy sentences from text without understanding",
+                  "solution": "Questions should require very short answers or True/False, check understanding during monitoring"
+                },
+                {
+                  "problem": "Students may struggle to locate information in longer text",
+                  "solution": "Teach scanning technique: look for key words from question in the text, show them this with first question"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Questions may be too difficult or require inference",
+                  "solution": "Ensure all questions have explicit answers in the text, avoid questions requiring interpretation at this level"
+                },
+                {
+                  "problem": "Some students may finish much earlier than others",
+                  "solution": "Have extension task ready: Find 3 adjectives in the text, or Write one sentence about each person"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "stage_number": 5,
+        "stage_title": "Reading for Detail and Language Focus",
+        "stage_description": "Students read the text more intensively to understand detailed information and notice the target language structures (present tense be, be + adjective) in context.",
+        "procedures": [
+          {
+            "procedure_number": 7,
+            "procedure_name": "Third Reading - Detail and Language Noticing",
+            "procedure_aim": "To develop detailed reading comprehension and help students notice target grammar structures in the text",
+            "total_timing": 18,
+            "procedure": {
+              "stage_content": "Students read the text carefully and complete tasks that require detailed understanding and attention to language. They identify examples of 'be' verb forms and 'be + adjective' in the text, then answer detail questions requiring fuller comprehension.",
+              "instructions": "Read the text again carefully. Find and underline all the sentences with 'is', 'are', 'am', 'I'm', 'he's', 'she's', 'they're'. How many can you find? Then answer the detail questions on the worksheet.",
+              "icqs": "Are you underlining words in the text? (yes) What words are you looking for? (is, are, am, I'm...) Are you answering questions too? (yes)",
+              "instruction_timing": 2,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Students read intensively, underlining examples of the target grammar in the text. They complete a detailed comprehension task with questions requiring fuller understanding, including questions about people's characteristics, relationships, and feelings. They may need to make simple inferences based on textual clues.",
+              "monitoring_points": "Check students are identifying grammar correctly in text, monitor if students understand the detail questions, note which language points or content areas cause confusion, provide support to struggling students, check students are working at appropriate pace",
+              "task_timing": 12,
+              "task_interaction": "Ss-text",
+              "feedback": "Review answers to detail questions first, then focus on the grammar noticing. Elicit examples students found and write them on board. Ask: Who is this about? Is this positive or negative? Build awareness of form and use without explicit grammar rules at this stage.",
+              "feedback_timing": 4,
+              "feedback_interaction": "Ss-T",
+              "learner_problems": [
+                {
+                  "problem": "Students may not recognize contracted forms like 'I'm', 'he's', 'she's' as forms of 'be'",
+                  "solution": "Pre-teach that these are short forms before the task, show equivalence: I'm = I am, provide list on board"
+                },
+                {
+                  "problem": "Students may struggle with detail questions requiring inference",
+                  "solution": "Ensure questions are within beginner level capability, provide sentence starters, allow pair discussion"
+                },
+                {
+                  "problem": "Students may underline incorrectly or miss examples",
+                  "solution": "Do the first paragraph together as an example, have early finishers compare with partner"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Finding grammar in text may be too challenging for beginners",
+                  "solution": "Provide partially completed version with some examples already underlined, or give line numbers where examples appear"
+                },
+                {
+                  "problem": "Task may take too long if text is lengthy",
+                  "solution": "Focus on key paragraphs only, or divide text sections among pairs"
+                }
+              ]
+            }
+          },
+          {
+            "procedure_number": 8,
+            "procedure_name": "Post-Reading Vocabulary Work",
+            "procedure_aim": "To consolidate new vocabulary from the text and provide pronunciation practice",
+            "total_timing": 12,
+            "procedure": {
+              "stage_content": "Students work with vocabulary from the text that wasn't pre-taught but is important for overall understanding. They match words to definitions or pictures, and practice pronunciation of key items from the reading.",
+              "instructions": "Look at these words from the text. Match each word to a picture or meaning. Work with your partner. Then we will practice saying the words.",
+              "icqs": "Are you working alone or with a partner? (partner) Are you matching words? (yes) Are you writing sentences? (no)",
+              "instruction_timing": 1,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Students complete a vocabulary matching exercise using words from the text. They work in pairs to support each other. After checking answers, teacher drills pronunciation of 6-8 key words focusing on accuracy, word stress, and connected speech.",
+              "monitoring_points": "Check students are using the text to help them if needed, monitor pair collaboration, note which vocabulary items cause most difficulty, listen for pronunciation errors to address in drilling phase",
+              "task_timing": 7,
+              "task_interaction": "SS-Ss",
+              "feedback": "Check answers by having students read words aloud. Drill pronunciation chorally and individually for words with difficult sounds or stress patterns. Address specific pronunciation issues noticed during monitoring. Have students practice in pairs.",
+              "feedback_timing": 4,
+              "feedback_interaction": "T-Ss",
+              "learner_problems": [
+                {
+                  "problem": "Students may not remember seeing words in the text",
+                  "solution": "Provide paragraph numbers or line references, allow students to look back at text"
+                },
+                {
+                  "problem": "Students may have difficulty with word stress in multi-syllable words",
+                  "solution": "Use hand gestures or board markers to show stress patterns, have students clap syllables"
+                },
+                {
+                  "problem": "Some students may dominate pair work while others remain passive",
+                  "solution": "Assign roles: Student A does odd numbers, Student B does even numbers, then compare"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Matching task may be too easy or too difficult",
+                  "solution": "Have differentiated versions ready, or add extension: use words in sentences"
+                },
+                {
+                  "problem": "Pronunciation practice may become mechanical and boring",
+                  "solution": "Vary drilling techniques: use whisper/shout, fast/slow, add emotion to words"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "stage_number": 6,
+        "stage_title": "Language Analysis and Practice",
+        "stage_description": "Focus explicitly on the target language structures identified in the text, analyzing form and meaning, and providing controlled practice opportunities.",
+        "procedures": [
+          {
+            "procedure_number": 9,
+            "procedure_name": "Grammar Clarification - Present Tense BE",
+            "procedure_aim": "To clarify the form, meaning, and use of present tense BE in positive, negative, and question forms",
+            "total_timing": 15,
+            "procedure": {
+              "stage_content": "Using examples from the text, teacher guides students to notice and understand the patterns of present tense BE. Focus on subject-verb agreement, contracted forms, and basic question formation. Create a clear reference on the board.",
+              "instructions": "Look at these sentences from the text. What do you notice? Let's complete this table together.",
+              "icqs": "Not applicable for guided discovery - teacher asks concept questions: Is this about now or past? (now) Do we say 'I is'? (no) What do we say? (I am)",
+              "instruction_timing": 2,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Students work with teacher to complete a form table on the board showing: I am/I'm, You are/You're, He is/He's, She is/She's, They are/They're. Teacher elicits negative forms and question forms. Students copy the table and examples into notebooks.",
+              "monitoring_points": "Check students are following the analysis, ensure students are copying correctly, monitor comprehension through student responses, watch for confusion between forms, ensure weaker students are not lost",
+              "task_timing": 10,
+              "task_interaction": "T-Ss",
+              "feedback": "Teacher provides clear models of each form, confirms correct student contributions, corrects errors immediately but positively, and provides additional examples to clarify any confusion. Check understanding with quick oral questions: What's the question form of 'She is'?",
+              "feedback_timing": 3,
+              "feedback_interaction": "T-Ss",
+              "learner_problems": [
+                {
+                  "problem": "Students may confuse subject pronouns and BE forms (I are, He am)",
+                  "solution": "Create clear visual table with color coding, drill combinations repeatedly, provide practice exercises"
+                },
+                {
+                  "problem": "Students may not understand why we have different forms of BE",
+                  "solution": "Compare to L1 if applicable, keep explanation simple: different words for different people, use consistent examples"
+                },
+                {
+                  "problem": "Students may struggle with contracted forms vs full forms",
+                  "solution": "Explain that both are correct, show when each is used, practice recognizing and producing both"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Grammatical explanation may be too abstract for beginners",
+                  "solution": "Keep language simple, use lots of examples, avoid metalanguage, focus on patterns not rules"
+                },
+                {
+                  "problem": "Students may become passive during explanation",
+                  "solution": "Use guided discovery: elicit from students rather than telling, give quick practice activities during explanation"
+                }
+              ]
+            }
+          },
+          {
+            "procedure_number": 10,
+            "procedure_name": "Controlled Practice - Gap Fill Exercise",
+            "procedure_aim": "To provide controlled practice of present tense BE forms and BE + adjective structure",
+            "total_timing": 12,
+            "procedure": {
+              "stage_content": "Students complete a controlled practice exercise filling gaps with correct forms of BE. Exercise includes sentences about families and descriptions using BE + adjective. Students work individually then check in pairs.",
+              "instructions": "Complete the sentences with am, is, or are. Look at the example. Number 1: She ___ my mother. What goes in the gap? Work alone, then check with your partner.",
+              "icqs": "Are you writing? (yes) What words can you use? (am, is, are) Are you writing sentences or just words? (just words) Do you check with partner? (yes, after finishing)",
+              "instruction_timing": 2,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Students complete 10-12 gap-fill sentences focusing on correct form of BE with different subjects. Sentences relate to family and personal descriptions to reinforce vocabulary. After completing, they check answers with a partner and discuss any differences.",
+              "monitoring_points": "Check students are choosing forms correctly, note which forms cause most errors, monitor for students who finish quickly or struggle, ensure students are actually checking with partners not just copying, identify common errors for feedback",
+              "task_timing": 7,
+              "task_interaction": "Ss-text",
+              "feedback": "Go through answers systematically. For each sentence, elicit the answer and ask why that form is correct. Point back to the reference table. Drill sentences with particular pronunciation focus on contractions. Address common errors observed.",
+              "feedback_timing": 3,
+              "feedback_interaction": "Ss-T",
+              "learner_problems": [
+                {
+                  "problem": "Students may make errors with third person singular (he/she is)",
+                  "solution": "Highlight this form specifically, provide extra practice sentences, create separate drill"
+                },
+                {
+                  "problem": "Students may struggle with negative forms if included",
+                  "solution": "Do negative forms as separate exercise or reduce number, ensure clear model provided"
+                },
+                {
+                  "problem": "Faster students may finish much earlier",
+                  "solution": "Prepare extension: write 3 sentences about your family using am/is/are"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Exercise may be too mechanical and demotivating",
+                  "solution": "Use personalized sentences, include some about the students themselves, add visuals"
+                },
+                {
+                  "problem": "Students may not understand context of some sentences",
+                  "solution": "Pre-teach any unfamiliar vocabulary in sentences, use simple contexts only"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "stage_number": 7,
+        "stage_title": "Speaking Practice and Personalization",
+        "stage_description": "Students use the language learned from the text in a personalized speaking activity, integrating reading content, vocabulary, and grammar structures.",
+        "procedures": [
+          {
+            "procedure_number": 11,
+            "procedure_name": "Freer Practice - Describing Family Members",
+            "procedure_aim": "To provide an opportunity for students to use new language productively in a personalized speaking task",
+            "total_timing": 15,
+            "procedure": {
+              "stage_content": "Students prepare to describe their own family member or a family member in a picture provided. They write key notes using target language (BE + adjective, family vocabulary), then describe to a partner. Partners ask follow-up questions.",
+              "instructions": "Choose one person in your family. Write notes about them: Who are they? What are they like? Use words from today's lesson. Then tell your partner about this person. Your partner will ask questions. You have 3 minutes to prepare.",
+              "icqs": "Are you talking now or preparing? (preparing) How many people do you describe? (one) Are you writing sentences or notes? (notes) Do you speak to your partner? (yes, after preparing)",
+              "instruction_timing": 2,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Students spend 3 minutes preparing notes about a family member using the language from the lesson. Then in pairs, Student A describes their person while Student B listens and asks questions. After 4 minutes, they swap roles. Teacher provides sentence frames on board for support.",
+              "monitoring_points": "During preparation: check students are using target language in notes, help with vocabulary if needed, ensure notes are brief not full sentences. During speaking: listen for accurate use of BE forms, monitor for use of adjectives, note good language use for praise, identify errors for later feedback, ensure both partners participate",
+              "task_timing": 11,
+              "task_interaction": "SS-Ss",
+              "feedback": "Conduct brief whole-class feedback. Nominate 1-2 students to share who they described. Focus on positive language use noticed during monitoring. Address 2-3 common errors by writing examples on board and eliciting corrections. Provide correct models and have students repeat.",
+              "feedback_timing": 2,
+              "feedback_interaction": "T-Ss",
+              "learner_problems": [
+                {
+                  "problem": "Students may struggle to produce language spontaneously even with notes",
+                  "solution": "Provide sentence frames on board: He/She is my..., He/She is... years old, He/She is...(adjective)"
+                },
+                {
+                  "problem": "Students may revert to L1 when struggling to express ideas",
+                  "solution": "Circulate actively providing language support, encourage any English use, allow some L1 but redirect to English"
+                },
+                {
+                  "problem": "Pronunciation may deteriorate when focusing on meaning",
+                  "solution": "Note specific errors but don't interrupt task, address in feedback, model correct versions"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Task may be too open and students may not know what to say",
+                  "solution": "Provide question prompts on board: What is their name? How old are they? What do they look like? What are they like?"
+                },
+                {
+                  "problem": "Some students may not want to share about real family",
+                  "solution": "Provide option to use a family from a picture or talk about a friend instead, make this clear from the start"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "stage_number": 8,
+        "stage_title": "Lesson Closure and Review",
+        "stage_description": "Students review what they learned in the lesson, reflect on their progress, and receive homework to consolidate learning.",
+        "procedures": [
+          {
+            "procedure_number": 12,
+            "procedure_name": "Review and Reflection",
+            "procedure_aim": "To review key language and content from the lesson and help students reflect on their learning",
+            "total_timing": 8,
+            "procedure": {
+              "stage_content": "Teacher leads a quick review of the lesson content including vocabulary and grammar. Students participate in a game or quick quiz to consolidate learning. Teacher elicits what students learned and what they found useful.",
+              "instructions": "Let's remember what we learned today. What new words do you know? What grammar did we study? Let's play a quick game to practice.",
+              "icqs": "Not applicable for review stage",
+              "instruction_timing": 1,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Students participate in a quick review game (e.g., vocabulary flashcard game, grammar auction, or quick quiz). They recall and use the language from the lesson in a fun, low-pressure way. Teacher elicits reflection: What was easy? What was difficult? What do you want to practice more?",
+              "monitoring_points": "Check all students are participating in game, ensure students are remembering key content, observe which areas students still struggle with, note areas needing review in next lesson",
+              "task_timing": 5,
+              "task_interaction": "T-Ss",
+              "feedback": "Praise effort and progress made during the lesson. Highlight particular successes noticed. Give encouraging feedback about areas still needing work. Provide clear next steps for continued learning.",
+              "feedback_timing": 2,
+              "feedback_interaction": "T-Ss",
+              "learner_problems": [
+                {
+                  "problem": "Students may be tired after 2-hour lesson and not engage with review",
+                  "solution": "Keep review energetic and game-like, make it competitive or team-based, keep it brief"
+                },
+                {
+                  "problem": "Students may not remember much from earlier in lesson",
+                  "solution": "Use visual prompts from lesson materials, refer to board work still visible, ask specific questions"
+                },
+                {
+                  "problem": "Students may feel overwhelmed by how much was covered",
+                  "solution": "Emphasize what they CAN do now versus before lesson, focus on positive achievements"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Review game may take too long or become chaotic",
+                  "solution": "Set strict time limits, have clear rules prepared, keep structure simple"
+                },
+                {
+                  "problem": "Some students may not participate in review",
+                  "solution": "Use nomination to ensure everyone contributes, make review inclusive for all levels"
+                }
+              ]
+            }
+          },
+          {
+            "procedure_number": 13,
+            "procedure_name": "Homework Assignment",
+            "procedure_aim": "To provide consolidation practice outside class and prepare students for continued learning",
+            "total_timing": 5,
+            "procedure": {
+              "stage_content": "Teacher assigns homework that reinforces the lesson content. This includes writing a short paragraph about their family using target language, completing additional grammar exercises, and reading a similar text for next lesson.",
+              "instructions": "For homework, write about your family. Write 5-6 sentences. Use am, is, are and adjectives we learned. Also complete the grammar worksheet. Bring it next class.",
+              "icqs": "Are you writing about your family? (yes) How many sentences? (5-6) Do you use am, is, are? (yes) Do you need to complete a worksheet? (yes) When do you bring it? (next class)",
+              "instruction_timing": 2,
+              "instruction_interaction": "T-Ss",
+              "task_completion": "Students write down homework assignment in their notebooks. Teacher shows example of what the writing should look like. Students can ask clarification questions. Teacher distributes any homework worksheets needed.",
+              "monitoring_points": "Check all students have written down assignment, ensure everyone understands what to do, verify students have necessary materials, confirm due date is clear",
+              "task_timing": 2,
+              "task_interaction": "T-Ss",
+              "feedback": "Answer any questions about homework. Provide encouragement that students can complete it successfully. Remind students they can use their notes, the textbook, and the reference table created in class.",
+              "feedback_timing": 1,
+              "feedback_interaction": "Ss-T",
+              "learner_problems": [
+                {
+                  "problem": "Students may not understand what is expected in written homework",
+                  "solution": "Show clear example on board or provide model text, give sentence starters"
+                },
+                {
+                  "problem": "Students may feel homework is too difficult to complete alone",
+                  "solution": "Ensure homework is within student capability, provide reference materials, encourage them to try their best"
+                },
+                {
+                  "problem": "Students may forget homework or lose worksheets",
+                  "solution": "Write assignment clearly on board, have students take photo, email assignment details if possible"
+                }
+              ],
+              "task_problems": [
+                {
+                  "problem": "Not enough time to explain homework properly",
+                  "solution": "Prepare homework explanation earlier in lesson, keep explanation very brief and clear"
+                },
+                {
+                  "problem": "Students may have questions about homework that delay end of class",
+                  "solution": "Set boundary: quick questions only now, detailed questions can be asked via email or at start of next class"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
+```

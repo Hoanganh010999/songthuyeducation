@@ -1,0 +1,846 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\LessonPlan;
+use App\Models\LessonPlanSession;
+use App\Models\Subject;
+use App\Models\QualitySetting;
+use App\Models\GoogleDriveSetting;
+use App\Services\GoogleDriveService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
+
+class LessonPlanController extends Controller
+{
+    /**
+     * Check if user has permission (supports both lesson_plans.* and syllabus.*)
+     */
+    private function checkPermission($user, $action)
+    {
+        $oldPerm = "lesson_plans.{$action}";
+        $newPerm = "syllabus.{$action}";
+        
+        return $user->hasPermission($oldPerm) || $user->hasPermission($newPerm);
+    }
+    
+    /**
+     * Check if user can manage materials (includes edit permission)
+     */
+    private function canManageMaterials($user)
+    {
+        return $this->checkPermission($user, 'edit') ||
+               $user->hasPermission('syllabus.manage_materials');
+    }
+
+    /**
+     * Check if user can edit a specific syllabus
+     *
+     * Logic:
+     * 1. User has permission syllabus.edit or lesson_plans.edit -> can edit all
+     * 2. User is head teacher of the subject -> can edit syllabus of that subject
+     * 3. User is department head of a department in teacher_department_ids -> can edit all
+     */
+    private function canEditSyllabus($user, LessonPlan $syllabus): bool
+    {
+        // 1. Check normal permission
+        if ($this->checkPermission($user, 'edit')) {
+            return true;
+        }
+
+        // 2. Check if user is head teacher of the subject
+        $subject = Subject::find($syllabus->subject_id);
+        if ($subject && $subject->isHeadTeacher($user)) {
+            return true;
+        }
+
+        // 3. Check if user is department head of a department in teacher_department_ids
+        $teacherDeptSetting = QualitySetting::where('branch_id', $user->branch_id)
+            ->where('industry', 'education')
+            ->where('setting_key', 'teacher_department_ids')
+            ->first();
+
+        if ($teacherDeptSetting) {
+            $teacherDeptIds = $teacherDeptSetting->setting_value ?? [];
+
+            // Check if user is head of any of these departments
+            $isHeadOfTeacherDept = $user->departments()
+                ->whereIn('departments.id', $teacherDeptIds)
+                ->wherePivot('is_head', true)
+                ->wherePivot('status', 'active')
+                ->exists();
+
+            if ($isHeadOfTeacherDept) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function index(Request $request)
+    {
+        if (!$this->checkPermission($request->user(), 'view')) {
+            return response()->json([
+                'success' => false,
+                'message' => __('errors.unauthorized_view_syllabus')
+            ], 403);
+        }
+        
+        $branchId = $request->input('branch_id');
+        $subjectId = $request->input('subject_id');
+        $status = $request->input('status');
+        
+        $query = LessonPlan::with(['subject', 'creator', 'sessions'])
+            ->forBranch($branchId);
+        
+        if ($subjectId) {
+            $query->where('subject_id', $subjectId);
+        }
+        
+        if ($status) {
+            $query->where('status', $status);
+        }
+        
+        $lessonPlans = $query->orderBy('created_at', 'desc')->get();
+
+        // Add can_edit flag to each lesson plan for frontend
+        $user = $request->user();
+        $lessonPlans->each(function ($lessonPlan) use ($user) {
+            $lessonPlan->can_edit = $this->canEditSyllabus($user, $lessonPlan);
+        });
+
+        return response()->json([
+            'success' => true,
+            'data' => $lessonPlans
+        ]);
+    }
+    
+    public function store(Request $request)
+    {
+        if (!$this->checkPermission($request->user(), 'create')) {
+            return response()->json([
+                'success' => false,
+                'message' => __('errors.unauthorized_create_syllabus')
+            ], 403);
+        }
+        
+        $validator = Validator::make($request->all(), [
+            'branch_id' => 'required|exists:branches,id',
+            'subject_id' => 'required|exists:subjects,id',
+            'name' => 'required|string|max:255',
+            'code' => 'required|string|unique:lesson_plans,code',
+            'total_sessions' => 'required|integer|min:1',
+            'level' => 'nullable|in:beginner,elementary,intermediate,high,university',
+            'academic_year' => 'nullable|string',
+            'description' => 'nullable|string',
+            'sessions' => 'nullable|array',
+            'sessions.*.session_number' => 'required|integer|min:1',
+            'sessions.*.lesson_title' => 'required|string',
+            'sessions.*.lesson_objectives' => 'nullable|string',
+            'sessions.*.lesson_content' => 'nullable|string',
+            'sessions.*.lesson_plan_url' => 'nullable|string',  // Changed from 'url' to 'string'
+            'sessions.*.materials_url' => 'nullable|string',    // Changed from 'url' to 'string'
+            'sessions.*.homework_url' => 'nullable|string',     // Changed from 'url' to 'string'
+            'sessions.*.valuation_form_id' => 'nullable|exists:valuation_forms,id',
+        ]);
+        
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Lỗi validation: ' . $validator->errors()->first(),
+                'errors' => $validator->errors()
+            ], 422);
+        }
+        
+        DB::beginTransaction();
+        try {
+            $lessonPlan = LessonPlan::create(array_merge($request->except('sessions'), [
+                'created_by' => auth()->id(),
+                'status' => 'draft'
+            ]));
+            
+            // Create sessions if provided, or auto-create empty sessions based on total_sessions
+            if ($request->has('sessions')) {
+                foreach ($request->sessions as $sessionData) {
+                    LessonPlanSession::create(array_merge($sessionData, [
+                        'lesson_plan_id' => $lessonPlan->id
+                    ]));
+                }
+            } else {
+                // Auto-create empty sessions based on total_sessions
+                for ($i = 1; $i <= $request->total_sessions; $i++) {
+                    LessonPlanSession::create([
+                        'lesson_plan_id' => $lessonPlan->id,
+                        'session_number' => $i,
+                        'lesson_title' => "Unit {$i}",
+                        'duration_minutes' => 45
+                    ]);
+                }
+            }
+            
+            DB::commit();
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Đã tạo giáo án thành công',
+                'data' => $lessonPlan->load(['subject', 'creator', 'sessions'])
+            ], 201);
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Lỗi khi tạo giáo án: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    
+    public function show($id)
+    {
+        if (!$this->checkPermission(request()->user(), 'view')) {
+            return response()->json([
+                'success' => false,
+                'message' => __('errors.unauthorized_view_syllabus')
+            ], 403);
+        }
+        
+        try {
+            $lessonPlan = LessonPlan::with(['subject', 'creator', 'sessions', 'classes'])
+                ->findOrFail($id);
+            
+            // Get unit folders from Google Drive if folder exists
+            $unitFolders = [];
+            if ($lessonPlan->google_drive_folder_id) {
+                try {
+                    $unitFolders = $this->getUnitFolders(
+                        $lessonPlan->google_drive_folder_id,
+                        $lessonPlan->id,
+                        $lessonPlan->branch_id,
+                        $lessonPlan->sessions
+                    );
+                } catch (\Exception $e) {
+                    \Log::error('[LessonPlan] Error getting unit folders', [
+                        'lesson_plan_id' => $id,
+                        'folder_id' => $lessonPlan->google_drive_folder_id,
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString(),
+                    ]);
+                    // Continue without unit folders if there's an error
+                    $unitFolders = [];
+                }
+            }
+            
+            return response()->json([
+                'success' => true,
+                'data' => $lessonPlan,
+                'unit_folders' => $unitFolders
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('[LessonPlan] Error in show method', [
+                'lesson_plan_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Error loading syllabus: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+    
+    /**
+     * Get unit folders from lesson_plan_sessions (simple and efficient)
+     * Folder IDs are saved to sessions when files are uploaded
+     */
+    protected function getUnitFolders($syllabusFolderId, $syllabusId = null, $branchId = null, $sessions = null)
+    {
+        try {
+            $unitFolders = [];
+            
+            // Get folder IDs directly from lesson_plan_sessions (most efficient)
+            if ($syllabusId) {
+                $sessionsWithFolders = \App\Models\LessonPlanSession::where('lesson_plan_id', $syllabusId)
+                    ->where(function($query) {
+                        $query->whereNotNull('google_drive_folder_id')
+                              ->orWhereNotNull('materials_folder_id')
+                              ->orWhereNotNull('homework_folder_id')
+                              ->orWhereNotNull('lesson_plans_folder_id');
+                    })
+                    ->select('session_number', 'google_drive_folder_id', 
+                             'materials_folder_id', 'homework_folder_id', 'lesson_plans_folder_id',
+                             'updated_at')
+                    ->get();
+                
+                foreach ($sessionsWithFolders as $session) {
+                    // Only include if at least one folder exists
+                    if ($session->google_drive_folder_id || $session->materials_folder_id || 
+                        $session->homework_folder_id || $session->lesson_plans_folder_id) {
+                        
+                        // Get folder creation time from google_drive_items if available
+                        $folderCreatedAt = null;
+                        if ($session->google_drive_folder_id) {
+                            $folderItem = \App\Models\GoogleDriveItem::where('google_id', $session->google_drive_folder_id)
+                                ->first();
+                            if ($folderItem && $folderItem->created_at) {
+                                $folderCreatedAt = $folderItem->created_at->toDateTimeString();
+                            }
+                        }
+                        
+                        $unitFolders[] = [
+                            'unit_number' => (int) $session->session_number,
+                            'unit_folder_id' => $session->google_drive_folder_id,
+                            'unit_folder_name' => "Unit {$session->session_number}", // Generate from session_number
+                            'unit_folder_created_at' => $folderCreatedAt,
+                            'materials_folder_id' => $session->materials_folder_id,
+                            'homework_folder_id' => $session->homework_folder_id,
+                            'lesson_plans_folder_id' => $session->lesson_plans_folder_id,
+                        ];
+                    }
+                }
+            }
+            
+            // Sort by unit number
+            usort($unitFolders, function($a, $b) {
+                return $a['unit_number'] <=> $b['unit_number'];
+            });
+            
+            return $unitFolders;
+        } catch (\Exception $e) {
+            \Log::error('[LessonPlan] Error in getUnitFolders', [
+                'syllabus_folder_id' => $syllabusFolderId,
+                'syllabus_id' => $syllabusId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            // Return empty array instead of throwing to avoid breaking the page
+            return [];
+        }
+    }
+    
+    /**
+     * Check impact of changing total_sessions (for preview before update)
+     */
+    public function checkSessionsImpact(Request $request, $id)
+    {
+        $lessonPlan = LessonPlan::with('sessions')->findOrFail($id);
+
+        if (!$this->canEditSyllabus($request->user(), $lessonPlan)) {
+            return response()->json([
+                'success' => false,
+                'message' => __('errors.unauthorized_edit_syllabus')
+            ], 403);
+        }
+
+        $newTotal = (int) $request->input('total_sessions', $lessonPlan->total_sessions);
+        $currentSessions = $lessonPlan->sessions()->orderBy('session_number')->get();
+        $currentCount = $currentSessions->count();
+
+        $result = [
+            'current_count' => $currentCount,
+            'new_total' => $newTotal,
+            'sessions_to_create' => [],
+            'sessions_to_delete' => [],
+        ];
+
+        if ($newTotal > $currentCount) {
+            // Will create new sessions
+            for ($i = $currentCount + 1; $i <= $newTotal; $i++) {
+                $result['sessions_to_create'][] = [
+                    'session_number' => $i,
+                    'lesson_title' => "Unit {$i}",
+                ];
+            }
+        } elseif ($newTotal < $currentCount) {
+            // Will delete sessions
+            $sessionsToDelete = $currentSessions->where('session_number', '>', $newTotal);
+            foreach ($sessionsToDelete as $session) {
+                $result['sessions_to_delete'][] = [
+                    'id' => $session->id,
+                    'session_number' => $session->session_number,
+                    'lesson_title' => $session->lesson_title,
+                    'has_content' => !empty($session->lesson_content) || !empty($session->lesson_objectives),
+                    'has_files' => !empty($session->lesson_plan_url) || !empty($session->materials_url) || !empty($session->homework_url),
+                    'has_google_drive' => !empty($session->google_drive_folder_id),
+                ];
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $result
+        ]);
+    }
+
+    public function update(Request $request, $id)
+    {
+        $lessonPlan = LessonPlan::findOrFail($id);
+
+        // Check permission using new logic (permission, head teacher, department head)
+        if (!$this->canEditSyllabus($request->user(), $lessonPlan)) {
+            return response()->json([
+                'success' => false,
+                'message' => __('errors.unauthorized_edit_syllabus')
+            ], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'name' => 'required|string|max:255',
+            'code' => 'required|string|unique:lesson_plans,code,' . $id,
+            'total_sessions' => 'required|integer|min:1',
+            'level' => 'nullable|in:beginner,elementary,intermediate,high,university',
+            'academic_year' => 'nullable|string',
+            'description' => 'nullable|string',
+            'status' => 'nullable|in:draft,approved,in_use,archived',
+            'confirm_delete_sessions' => 'nullable|boolean', // Confirm deletion of sessions
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $newTotal = (int) $request->total_sessions;
+        $currentCount = $lessonPlan->sessions()->count();
+
+        // Check if reducing sessions and not confirmed
+        if ($newTotal < $currentCount && !$request->boolean('confirm_delete_sessions')) {
+            $sessionsToDelete = $lessonPlan->sessions()
+                ->where('session_number', '>', $newTotal)
+                ->orderBy('session_number')
+                ->get(['id', 'session_number', 'lesson_title', 'lesson_content', 'lesson_objectives', 'lesson_plan_url', 'materials_url', 'homework_url', 'google_drive_folder_id']);
+
+            return response()->json([
+                'success' => false,
+                'requires_confirmation' => true,
+                'message' => 'Thay đổi này sẽ xóa ' . $sessionsToDelete->count() . ' session(s). Vui lòng xác nhận.',
+                'sessions_to_delete' => $sessionsToDelete->map(function ($session) {
+                    return [
+                        'id' => $session->id,
+                        'session_number' => $session->session_number,
+                        'lesson_title' => $session->lesson_title,
+                        'has_content' => !empty($session->lesson_content) || !empty($session->lesson_objectives),
+                        'has_files' => !empty($session->lesson_plan_url) || !empty($session->materials_url) || !empty($session->homework_url),
+                        'has_google_drive' => !empty($session->google_drive_folder_id),
+                    ];
+                })
+            ], 422);
+        }
+
+        DB::beginTransaction();
+        try {
+            // Update the lesson plan
+            $lessonPlan->update($request->except('confirm_delete_sessions'));
+
+            // Handle session count changes
+            if ($newTotal > $currentCount) {
+                // Create new sessions
+                for ($i = $currentCount + 1; $i <= $newTotal; $i++) {
+                    LessonPlanSession::create([
+                        'lesson_plan_id' => $lessonPlan->id,
+                        'session_number' => $i,
+                        'lesson_title' => "Unit {$i}",
+                        'duration_minutes' => 45
+                    ]);
+                }
+            } elseif ($newTotal < $currentCount && $request->boolean('confirm_delete_sessions')) {
+                // Delete sessions beyond new total
+                $lessonPlan->sessions()
+                    ->where('session_number', '>', $newTotal)
+                    ->delete();
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Đã cập nhật giáo án thành công',
+                'data' => $lessonPlan->load(['subject', 'creator', 'sessions'])
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Lỗi khi cập nhật giáo án: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    
+    /**
+     * Update lesson plan status
+     */
+    public function updateStatus(Request $request, $id)
+    {
+        $user = $request->user();
+        $lessonPlan = LessonPlan::findOrFail($id);
+
+        // Check permission: normal permission OR head teacher OR department head
+        $canChangeStatus = $user->hasPermission('syllabus.change_status')
+            || $this->canEditSyllabus($user, $lessonPlan);
+
+        if (!$canChangeStatus) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Bạn không có quyền thay đổi trạng thái giáo án'
+            ], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'status' => 'required|in:draft,approved,in_use,archived',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Trạng thái không hợp lệ',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $oldStatus = $lessonPlan->status;
+            $newStatus = $request->status;
+
+            $lessonPlan->status = $newStatus;
+            $lessonPlan->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => "Đã thay đổi trạng thái từ '{$oldStatus}' thành '{$newStatus}'",
+                'data' => [
+                    'id' => $lessonPlan->id,
+                    'status' => $lessonPlan->status,
+                    'old_status' => $oldStatus
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Lỗi khi thay đổi trạng thái: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function destroy($id)
+    {
+        if (!$this->checkPermission(request()->user(), 'delete')) {
+            return response()->json([
+                'success' => false,
+                'message' => __('errors.unauthorized_delete_syllabus')
+            ], 403);
+        }
+        
+        try {
+            DB::beginTransaction();
+            
+            $lessonPlan = LessonPlan::with('classes', 'sessions')->findOrFail($id);
+            
+            // Check if lesson plan is being used by classes
+            $classCount = $lessonPlan->classes()->count();
+            if ($classCount > 0) {
+                $classNames = $lessonPlan->classes()->pluck('name')->take(3)->implode(', ');
+                $more = $classCount > 3 ? " và " . ($classCount - 3) . " lớp khác" : "";
+                
+                return response()->json([
+                    'success' => false,
+                    'message' => "Không thể xóa giáo án đang được sử dụng bởi {$classCount} lớp học ({$classNames}{$more})"
+                ], 422);
+            }
+            
+            // Delete sessions first
+            $lessonPlan->sessions()->delete();
+            
+            // Delete the lesson plan
+            $lessonPlan->delete();
+            
+            DB::commit();
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Đã xóa giáo án thành công'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Lỗi khi xóa giáo án: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    
+    // ==========================================
+    // LESSON PLAN SESSIONS
+    // ==========================================
+    
+    public function getSessions($lessonPlanId)
+    {
+        $sessions = LessonPlanSession::where('lesson_plan_id', $lessonPlanId)
+            ->orderBy('session_number')
+            ->get();
+        
+        return response()->json([
+            'success' => true,
+            'data' => $sessions
+        ]);
+    }
+    
+    public function createSession(Request $request, $lessonPlanId)
+    {
+        $lessonPlan = LessonPlan::findOrFail($lessonPlanId);
+
+        // Check permission: canManageMaterials OR canEditSyllabus (head teacher, dept head)
+        if (!$this->canManageMaterials($request->user()) && !$this->canEditSyllabus($request->user(), $lessonPlan)) {
+            return response()->json([
+                'success' => false,
+                'message' => __('errors.unauthorized_manage_syllabus_content')
+            ], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'session_number' => 'required|integer|min:1',
+            'lesson_title' => 'required|string',
+            'lesson_objectives' => 'nullable|string',
+            'lesson_content' => 'nullable|string',
+            'lesson_plan_url' => 'nullable|string',  // Changed from 'url' to 'string' to accept Google Drive links
+            'materials_url' => 'nullable|string',    // Changed from 'url' to 'string' to accept Google Drive links
+            'homework_url' => 'nullable|string',     // Changed from 'url' to 'string' to accept Google Drive links
+            'valuation_form_id' => 'nullable|exists:valuation_forms,id',
+            'additional_resources' => 'nullable|array',
+            'duration_minutes' => 'nullable|integer|min:1',
+            // TECP Lesson Plan fields
+            'teacher_name' => 'nullable|string',
+            'lesson_focus' => 'nullable|string',
+            'level' => 'nullable|string',
+            'lesson_date' => 'nullable|date',
+            'tp_number' => 'nullable|string',
+            'communicative_outcome' => 'nullable|string',
+            'linguistic_aim' => 'nullable|string',
+            'productive_subskills_focus' => 'nullable|string',
+            'receptive_subskills_focus' => 'nullable|string',
+            'framework_shape' => 'nullable|string|in:A,B,C,D,E,F,G,H',
+            'teaching_aspects_to_improve' => 'nullable|string',
+            'improvement_methods' => 'nullable|string',
+            'language_area' => 'nullable|string',
+            'examples_of_language' => 'nullable|string',
+            'context' => 'nullable|string',
+            'concept_checking_methods' => 'nullable|string',
+            'concept_checking_in_lesson' => 'nullable|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Lỗi validation: ' . $validator->errors()->first(),
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $sessionData = $request->only([
+            'session_number', 'lesson_title', 'lesson_objectives', 'lesson_content',
+            'lesson_plan_url', 'materials_url', 'homework_url', 'valuation_form_id',
+            'additional_resources', 'duration_minutes', 'notes',
+            // TECP Lesson Plan fields
+            'teacher_name', 'lesson_focus', 'level', 'lesson_date', 'tp_number',
+            'communicative_outcome', 'linguistic_aim', 'productive_subskills_focus', 'receptive_subskills_focus',
+            'framework_shape', 'teaching_aspects_to_improve', 'improvement_methods',
+            'language_area', 'examples_of_language', 'context', 'concept_checking_methods', 'concept_checking_in_lesson'
+        ]);
+        $sessionData['lesson_plan_id'] = $lessonPlanId;
+
+        $session = LessonPlanSession::create($sessionData);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Đã tạo buổi học thành công',
+            'data' => $session
+        ], 201);
+    }
+    
+    public function updateSession(Request $request, $lessonPlanId, $sessionId)
+    {
+        $lessonPlan = LessonPlan::findOrFail($lessonPlanId);
+
+        // Check permission: canManageMaterials OR canEditSyllabus (head teacher, dept head)
+        if (!$this->canManageMaterials($request->user()) && !$this->canEditSyllabus($request->user(), $lessonPlan)) {
+            return response()->json([
+                'success' => false,
+                'message' => __('errors.unauthorized_manage_syllabus_content')
+            ], 403);
+        }
+
+        $session = LessonPlanSession::where('lesson_plan_id', $lessonPlanId)
+            ->findOrFail($sessionId);
+
+        $validator = Validator::make($request->all(), [
+            'session_number' => 'required|integer|min:1',
+            'lesson_title' => 'required|string',
+            'lesson_objectives' => 'nullable|string',
+            'lesson_content' => 'nullable|string',
+            'lesson_plan_url' => 'nullable|string',  // Changed from 'url' to 'string' to accept Google Drive links
+            'materials_url' => 'nullable|string',    // Changed from 'url' to 'string' to accept Google Drive links
+            'homework_url' => 'nullable|string',     // Changed from 'url' to 'string' to accept Google Drive links
+            'valuation_form_id' => 'nullable|exists:valuation_forms,id',
+            'additional_resources' => 'nullable|array',
+            'duration_minutes' => 'nullable|integer|min:1',
+            // TECP Lesson Plan fields
+            'teacher_name' => 'nullable|string',
+            'lesson_focus' => 'nullable|string',
+            'level' => 'nullable|string',
+            'lesson_date' => 'nullable|date',
+            'tp_number' => 'nullable|string',
+            'communicative_outcome' => 'nullable|string',
+            'linguistic_aim' => 'nullable|string',
+            'productive_subskills_focus' => 'nullable|string',
+            'receptive_subskills_focus' => 'nullable|string',
+            'framework_shape' => 'nullable|string|in:A,B,C,D,E,F,G,H',
+            'teaching_aspects_to_improve' => 'nullable|string',
+            'improvement_methods' => 'nullable|string',
+            'language_area' => 'nullable|string',
+            'examples_of_language' => 'nullable|string',
+            'context' => 'nullable|string',
+            'concept_checking_methods' => 'nullable|string',
+            'concept_checking_in_lesson' => 'nullable|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Lỗi validation: ' . $validator->errors()->first(),
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        // Only update fields that are fillable
+        $session->update($request->only([
+            'session_number', 'lesson_title', 'lesson_objectives', 'lesson_content',
+            'lesson_plan_url', 'materials_url', 'homework_url', 'valuation_form_id',
+            'additional_resources', 'duration_minutes', 'notes',
+            // TECP Lesson Plan fields
+            'teacher_name', 'lesson_focus', 'level', 'lesson_date', 'tp_number',
+            'communicative_outcome', 'linguistic_aim', 'productive_subskills_focus', 'receptive_subskills_focus',
+            'framework_shape', 'teaching_aspects_to_improve', 'improvement_methods',
+            'language_area', 'examples_of_language', 'context', 'concept_checking_methods', 'concept_checking_in_lesson'
+        ]));
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Đã cập nhật buổi học thành công',
+            'data' => $session
+        ]);
+    }
+    
+    public function reorderSessions(Request $request, $lessonPlanId)
+    {
+        $lessonPlan = LessonPlan::findOrFail($lessonPlanId);
+
+        // Check permission: canManageMaterials OR canEditSyllabus
+        if (!$this->canManageMaterials($request->user()) && !$this->canEditSyllabus($request->user(), $lessonPlan)) {
+            return response()->json([
+                'success' => false,
+                'message' => __('errors.unauthorized_manage_syllabus_content')
+            ], 403);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'order' => 'required|array',
+            'order.*.id' => 'required|integer|exists:lesson_plan_sessions,id',
+            'order.*.session_number' => 'required|integer|min:1'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->first()
+            ], 422);
+        }
+
+        \Log::info('[LessonPlan] Reordering sessions', [
+            'lesson_plan_id' => $lessonPlanId,
+            'order' => $request->order
+        ]);
+
+        try {
+            // Update each session's session_number
+            foreach ($request->order as $item) {
+                LessonPlanSession::where('lesson_plan_id', $lessonPlanId)
+                    ->where('id', $item['id'])
+                    ->update(['session_number' => $item['session_number']]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Session order updated successfully'
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('[LessonPlan] Error reordering sessions', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update session order: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function deleteSession($lessonPlanId, $sessionId)
+    {
+        $lessonPlan = LessonPlan::findOrFail($lessonPlanId);
+
+        // Check permission: delete permission OR canEditSyllabus (head teacher, dept head)
+        if (!$this->checkPermission(request()->user(), 'delete') && !$this->canEditSyllabus(request()->user(), $lessonPlan)) {
+            return response()->json([
+                'success' => false,
+                'message' => __('errors.unauthorized_delete_syllabus_content')
+            ], 403);
+        }
+
+        $session = LessonPlanSession::where('lesson_plan_id', $lessonPlanId)
+            ->findOrFail($sessionId);
+
+        $session->delete();
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Đã xóa buổi học thành công'
+        ]);
+    }
+    
+    // ==========================================
+    // HELPER METHODS
+    // ==========================================
+    
+    /**
+     * Get subjects list for lesson plan creation (no permission check)
+     * This endpoint is accessible to anyone who can view lesson plans
+     */
+    public function getSubjectsList(Request $request)
+    {
+        $branchId = $request->input('branch_id');
+        
+        $query = Subject::query();
+        
+        if ($branchId) {
+            $query->where('branch_id', $branchId);
+        }
+        
+        $subjects = $query->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get(['id', 'name', 'code', 'branch_id']);
+        
+        return response()->json([
+            'success' => true,
+            'data' => $subjects
+        ]);
+    }
+}

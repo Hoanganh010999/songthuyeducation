@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clear Browser Cache</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 28px;
+        }
+        .alert {
+            background: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+        }
+        .steps {
+            background: #f9fafb;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        .step {
+            margin-bottom: 15px;
+            padding-left: 30px;
+            position: relative;
+        }
+        .step::before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            top: 0;
+            background: #10b981;
+            color: white;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+        .button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 20px;
+            transition: all 0.3s;
+        }
+        .button:hover {
+            background: #5a67d8;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+        .info {
+            background: #dbeafe;
+            border-left: 4px solid #3b82f6;
+            padding: 15px;
+            margin-top: 20px;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        code {
+            background: #f3f4f6;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔄 Clear Browser Cache Required</h1>
+        
+        <div class="alert">
+            <strong>⚠️ Action Required:</strong> Browser đang load code cũ. Vui lòng clear cache để load code mới!
+        </div>
+
+        <div class="steps">
+            <h3 style="margin-bottom: 15px;">Cách 1: Hard Refresh (Nhanh nhất)</h3>
+            <div class="step">Mở trang Dashboard: <code>http://127.0.0.1:8000</code></div>
+            <div class="step">Nhấn <code>F12</code> để mở DevTools</div>
+            <div class="step">Right-click vào nút Refresh (bên address bar)</div>
+            <div class="step">Chọn: <strong>"Empty Cache and Hard Reload"</strong></div>
+        </div>
+
+        <div class="steps">
+            <h3 style="margin-bottom: 15px;">Cách 2: Clear via Settings</h3>
+            <div class="step">Nhấn <code>Ctrl + Shift + Delete</code></div>
+            <div class="step">Chọn: <strong>Cached images and files</strong></div>
+            <div class="step">Time range: <strong>Last hour</strong></div>
+            <div class="step">Click <strong>Clear data</strong></div>
+            <div class="step">Reload trang: <code>Ctrl + F5</code></div>
+        </div>
+
+        <div class="steps">
+            <h3 style="margin-bottom: 15px;">Cách 3: Incognito Mode (Để test)</h3>
+            <div class="step">Nhấn <code>Ctrl + Shift + N</code></div>
+            <div class="step">Truy cập: <code>http://127.0.0.1:8000</code></div>
+            <div class="step">Đăng nhập lại</div>
+        </div>
+
+        <div class="info">
+            <strong>ℹ️ Build hiện tại:</strong> <code>app-D-ajiDuo.js</code><br>
+            <strong>🚫 File cũ (KHÔNG được load):</strong> <code>chunk-YM2QSGQA.js</code><br><br>
+            Kiểm tra trong Network tab (F12) xem file nào đang được load!
+        </div>
+
+        <button class="button" onclick="goToDashboard()">
+            ✨ Đã Clear Cache → Go to Dashboard
+        </button>
+
+        <script>
+            function goToDashboard() {
+                // Clear localStorage and sessionStorage
+                const token = localStorage.getItem('token');
+                localStorage.clear();
+                sessionStorage.clear();
+                if (token) {
+                    localStorage.setItem('token', token);
+                }
+                
+                // Redirect with cache busting
+                window.location.href = 'http://127.0.0.1:8000?t=' + Date.now();
+            }
+
+            // Auto-check if cache is cleared
+            window.addEventListener('load', function() {
+                const currentJS = 'app-D-ajiDuo.js';
+                const scripts = Array.from(document.querySelectorAll('script'));
+                const hasNewJS = scripts.some(s => s.src.includes(currentJS));
+                
+                if (hasNewJS) {
+                    alert('✅ Cache cleared successfully! Click OK to continue.');
+                    goToDashboard();
+                }
+            });
+        </script>
+    </div>
+</body>
+</html>
+
+
+
+
+
+
+
+
+

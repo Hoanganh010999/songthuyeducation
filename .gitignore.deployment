@@ -1,0 +1,60 @@
+# Git Ignore cho Deployment
+# Copy file này thành .gitignore nếu dùng Git để deploy
+
+# Laravel
+/node_modules
+/public/hot
+/public/storage
+/storage/*.key
+/vendor
+.env
+.env.backup
+.phpunit.result.cache
+Homestead.json
+Homestead.yaml
+npm-debug.log
+yarn-error.log
+
+# Zalo Service
+/zalo-service/node_modules
+/zalo-service/.env
+/zalo-service/sessions/*
+!/zalo-service/sessions/.gitkeep
+
+# IDE
+/.idea
+/.vscode
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.tar.gz
+*.zip
+*-backup-*
+school-backup-*
+website-backup-*
+
+# Logs
+*.log
+/storage/logs/*.log
+
+# Database
+*.sqlite
+*.sql
+/database/*.sqlite
+
+# Build files (nếu rebuild trên server)
+/public/build
+/public/mix-manifest.json
+
+# Temporary files
+/tmp
+/temp
+
+# Documentation build
+/docs/build

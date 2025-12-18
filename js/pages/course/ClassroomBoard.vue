@@ -1,0 +1,3067 @@
+<template>
+  <div class="flex gap-6 max-w-7xl mx-auto p-6">
+    <!-- Main Feed Column -->
+    <div class="flex-1 max-w-2xl">
+      <!-- Class Selector -->
+      <div class="bg-white rounded-lg shadow p-4 mb-6">
+        <label class="block text-sm font-medium text-gray-700 mb-2">{{ t('course.select_class') }}</label>
+        <select 
+          v-model="classId"
+          @change="onClassChange"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        >
+          <option v-for="cls in availableClasses" :key="cls.id" :value="cls.id">
+            {{ cls.code }} - {{ cls.name }}
+          </option>
+        </select>
+      </div>
+
+      <!-- Post Composer with Tabs -->
+      <div class="bg-white rounded-lg shadow mb-6" v-if="canCreateAnyPost && classId">
+        <!-- Tab Header -->
+        <div class="border-b border-gray-200">
+          <div class="flex">
+            <button
+              v-if="authStore.hasPermission('course.post')"
+              @click="activeComposerTab = 'post'"
+              :class="[
+                'flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
+                activeComposerTab === 'post'
+                  ? 'border-blue-600 text-blue-600 bg-blue-50'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+              ]"
+            >
+              <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+              </svg>
+              {{ t('course.post') }}
+            </button>
+            <button
+              v-if="authStore.hasPermission('course.create_event')"
+              @click="activeComposerTab = 'event'"
+              :class="[
+                'flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
+                activeComposerTab === 'event'
+                  ? 'border-purple-600 text-purple-600 bg-purple-50'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+              ]"
+            >
+              <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              {{ t('course.event') }}
+            </button>
+            <button
+              v-if="authStore.hasPermission('course.create_homework')"
+              @click="activeComposerTab = 'homework'"
+              :class="[
+                'flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
+                activeComposerTab === 'homework'
+                  ? 'border-orange-600 text-orange-600 bg-orange-50'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+              ]"
+            >
+              <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              {{ t('course.homework') }}
+            </button>
+            <button
+              v-if="canViewZaloChat"
+              @click="activeComposerTab = 'zalo_chat'"
+              :class="[
+                'flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors',
+                activeComposerTab === 'zalo_chat'
+                  ? 'border-green-600 text-green-600 bg-green-50'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+              ]"
+            >
+              <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+              {{ t('course.zalo_group_chat') || 'Group Zalo Chat' }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Tab Content -->
+        <div class="p-4">
+          <!-- Regular Post Form -->
+          <div v-if="activeComposerTab === 'post'" class="space-y-3">
+            <div class="border border-gray-300 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-blue-500">
+              <div ref="postEditorRef" class="min-h-[120px]"></div>
+            </div>
+            
+            <!-- Media Upload Section -->
+            <div class="space-y-2">
+              <div class="flex items-center gap-2">
+                <input
+                  ref="postMediaInput"
+                  type="file"
+                  multiple
+                  accept="image/*,video/*"
+                  @change="handleMediaSelect"
+                  class="hidden"
+                />
+                <button
+                  @click="$refs.postMediaInput.click()"
+                  type="button"
+                  class="inline-flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  {{ t('course.add_photos_videos') }}
+                </button>
+                <span v-if="selectedMedia.length > 0" class="text-sm text-gray-600">
+                  {{ selectedMedia.length }} {{ t('course.files_selected') }}
+                </span>
+              </div>
+              
+              <!-- Media Preview -->
+              <div v-if="selectedMedia.length > 0" class="grid grid-cols-4 gap-2">
+                <div v-for="(media, index) in selectedMedia" :key="index" class="relative group">
+                  <div class="aspect-square rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
+                    <img v-if="media.type.startsWith('image/')" 
+                      :src="media.preview" 
+                      class="w-full h-full object-cover"
+                    />
+                    <div v-else class="w-full h-full flex items-center justify-center">
+                      <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                  </div>
+                  <button
+                    @click="removeMedia(index)"
+                    type="button"
+                    class="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            <div class="flex justify-end">
+              <button
+                @click="createPost"
+                :disabled="!postEditor.content || posting"
+                class="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+              >
+                <svg v-if="posting" class="animate-spin -ml-1 mr-2 h-4 w-4 inline" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                {{ posting ? t('common.posting') : t('course.post') }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Event Form -->
+          <div v-if="activeComposerTab === 'event'" class="space-y-3">
+            <div class="border border-gray-300 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-purple-500">
+              <div ref="eventEditorRef" class="min-h-[100px]"></div>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1.5">{{ t('course.event_start_date') }} *</label>
+                <input
+                  v-model="eventForm.event_start_date"
+                  type="datetime-local"
+                  class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  required
+                />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-700 mb-1.5">{{ t('course.event_end_date') }}</label>
+                <input
+                  v-model="eventForm.event_end_date"
+                  type="datetime-local"
+                  class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 gap-3">
+              <input
+                v-model="eventForm.event_location"
+                type="text"
+                :placeholder="t('course.event_location')"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              />
+            </div>
+
+            <div class="flex items-center justify-between bg-purple-50 px-3 py-2 rounded-lg">
+              <label class="flex items-center cursor-pointer">
+                <input
+                  v-model="eventForm.is_all_day"
+                  type="checkbox"
+                  id="isAllDay"
+                  class="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
+                />
+                <span class="ml-2 text-sm text-gray-700">{{ t('course.all_day') }}</span>
+              </label>
+              <button
+                @click="createEvent"
+                :disabled="creatingEvent || !eventEditor.content || !eventForm.event_start_date"
+                class="px-4 py-1.5 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors font-medium"
+              >
+                <svg v-if="creatingEvent" class="animate-spin -ml-1 mr-1.5 h-3.5 w-3.5 inline" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                {{ creatingEvent ? t('common.creating') : t('course.create_event') }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Homework Form -->
+          <div v-if="activeComposerTab === 'homework'" class="space-y-3">
+            <input
+              v-model="homeworkForm.title"
+              type="text"
+              :placeholder="t('course.homework_title') + ' *'"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent font-medium"
+              required
+            />
+            
+            <div class="border border-gray-300 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-orange-500">
+              <div ref="homeworkEditorRef" class="min-h-[80px]"></div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <select
+                v-model="homeworkForm.session_id"
+                @change="onSessionChange"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                required
+              >
+                <option value="">{{ t('course.select_session') }} *</option>
+                <option v-for="session in availableSessions" :key="session.id" :value="session.id">
+                  Buổi {{ session.session_number }}: {{ session.lesson_title }}
+                </option>
+              </select>
+
+              <input
+                v-model="homeworkForm.deadline"
+                type="datetime-local"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+              />
+            </div>
+
+            <!-- File Selector - Compact -->
+            <div v-if="homeworkForm.session_id" class="bg-orange-50 rounded-lg p-3">
+              <div class="flex items-center justify-between mb-2">
+                <label class="text-xs font-medium text-orange-900">{{ t('course.select_files') }} *</label>
+                <span v-if="homeworkForm.file_ids.length > 0" class="text-xs text-orange-700 font-semibold">
+                  {{ homeworkForm.file_ids.length }} file(s)
+                </span>
+              </div>
+              
+              <div v-if="loadingSessionFiles" class="text-center py-3">
+                <div class="inline-block animate-spin rounded-full h-5 w-5 border-b-2 border-orange-600"></div>
+              </div>
+              <div v-else-if="sessionFiles.length === 0" class="text-xs text-gray-500 text-center py-2">
+                {{ t('course.no_files_available') }}
+              </div>
+              <div v-else class="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto">
+                <label
+                  v-for="file in sessionFiles"
+                  :key="file.google_id"
+                  class="flex items-center space-x-2 p-2 bg-white hover:bg-orange-100 rounded border border-orange-200 cursor-pointer transition-colors"
+                >
+                  <input
+                    type="checkbox"
+                    :value="file.google_id"
+                    v-model="homeworkForm.file_ids"
+                    class="w-3.5 h-3.5 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+                  />
+                  <span class="text-base flex-shrink-0">{{ getFileIcon(file.mime_type) }}</span>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-xs font-medium text-gray-800 truncate">{{ file.name }}</p>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <!-- Student Assignment - Compact -->
+            <div class="bg-gray-50 rounded-lg p-3">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                  <label class="flex items-center cursor-pointer">
+                    <input
+                      type="radio"
+                      v-model="assignmentType"
+                      value="all"
+                      class="w-3.5 h-3.5 text-orange-600 border-gray-300 focus:ring-orange-500"
+                    />
+                    <span class="ml-1.5 text-xs text-gray-700">{{ t('course.all_students') }}</span>
+                  </label>
+                  <label class="flex items-center cursor-pointer">
+                    <input
+                      type="radio"
+                      v-model="assignmentType"
+                      value="specific"
+                      class="w-3.5 h-3.5 text-orange-600 border-gray-300 focus:ring-orange-500"
+                    />
+                    <span class="ml-1.5 text-xs text-gray-700">{{ t('course.specific_students') }}</span>
+                  </label>
+                </div>
+                <button
+                  @click="createHomework"
+                  :disabled="creatingHomework || !homeworkForm.session_id || homeworkForm.file_ids.length === 0"
+                  class="px-4 py-1.5 bg-orange-600 text-white text-sm rounded-lg hover:bg-orange-700 disabled:opacity-50 transition-colors font-medium"
+                >
+                  <svg v-if="creatingHomework" class="animate-spin -ml-1 mr-1.5 h-3.5 w-3.5 inline" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  {{ creatingHomework ? t('common.creating') : t('course.create_homework') }}
+                </button>
+              </div>
+              
+              <div v-if="assignmentType === 'specific'" class="mt-2 grid grid-cols-2 gap-1.5 max-h-28 overflow-y-auto">
+                <label
+                  v-for="student in classStudents"
+                  :key="student.id"
+                  class="flex items-center space-x-2 p-1.5 bg-white hover:bg-orange-50 rounded border border-gray-200 cursor-pointer text-xs"
+                >
+                  <input
+                    type="checkbox"
+                    :value="student.user_id"
+                    v-model="homeworkForm.assigned_to"
+                    class="w-3.5 h-3.5 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+                  />
+                  <span class="truncate">{{ student.full_name }}</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Zalo Chat Tab -->
+          <div v-if="activeComposerTab === 'zalo_chat'" class="min-h-[500px]">
+            <!-- Validating Group -->
+            <div v-if="validatingGroup" class="flex items-center justify-center py-12">
+              <div class="text-center">
+                <svg class="animate-spin w-12 h-12 mx-auto text-blue-600 mb-4" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p class="text-gray-600">{{ t('common.loading') }}...</p>
+              </div>
+            </div>
+
+            <!-- No Group or Group Doesn't Exist -->
+            <div v-else-if="!selectedClass?.zalo_group_id || !groupExists" class="flex items-center justify-center py-12">
+              <div class="text-center max-w-md">
+                <svg class="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+                <h3 class="text-lg font-semibold text-gray-900 mb-2">
+                  {{ t('quality.no_zalo_group') || 'Chưa có Zalo Group' }}
+                </h3>
+                <p class="text-gray-600 mb-6">
+                  {{ t('quality.no_zalo_group_desc') || 'Lớp học này chưa được liên kết với Zalo Group. Hãy liên hệ admin để thêm group.' }}
+                </p>
+                <a
+                  :href="`/quality/classes/${classId}`"
+                  target="_blank"
+                  class="inline-flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  {{ t('common.go_to_settings') || 'Đi tới cài đặt lớp học' }}
+                </a>
+              </div>
+            </div>
+
+            <!-- Has Group - Show Chat -->
+            <div v-else class="h-[600px] -mx-4 -my-4">
+              <ZaloChatView
+                v-if="zaloGroupItem"
+                :item="zaloGroupItem"
+                :account-id="selectedClass.zalo_account_id"
+                item-type="groups"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Posts Feed -->
+      <div class="space-y-6">
+      <div v-if="loading" class="text-center py-12">
+        <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+
+      <div v-else-if="posts.length === 0" class="bg-white rounded-lg shadow p-12 text-center">
+        <div class="text-gray-400 mb-4">
+          <svg class="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+        </div>
+        <p class="text-gray-600">{{ t('course.no_posts') }}</p>
+      </div>
+
+      <!-- Post Card -->
+      <div 
+        v-for="post in posts" 
+        :key="post.id" 
+        :class="[
+          'bg-white rounded-lg shadow-md overflow-hidden transition-all hover:shadow-lg',
+          post.post_type === 'event' ? 'border-l-4 border-purple-500' : '',
+          post.post_type === 'homework' ? 'border-l-4 border-orange-500' : 'border-l-4 border-blue-500'
+        ]"
+      >
+        <!-- Post Type Badge -->
+        <div 
+          v-if="post.post_type && post.post_type !== 'post'" 
+          :class="[
+            'px-4 py-2 text-xs font-semibold flex items-center gap-2',
+            post.post_type === 'event' ? 'bg-purple-50 text-purple-700' : 'bg-orange-50 text-orange-700'
+          ]"
+        >
+          <svg v-if="post.post_type === 'event'" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          <svg v-if="post.post_type === 'homework'" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          {{ post.post_type === 'event' ? t('course.event') : t('course.homework') }}
+        </div>
+
+        <div class="p-4 pb-0">
+          <!-- Post Header -->
+          <div class="flex items-start justify-between mb-3">
+            <div class="flex items-start space-x-3">
+              <div 
+                :class="[
+                  'w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold text-lg shadow-sm',
+                  post.post_type === 'event' ? 'bg-gradient-to-br from-purple-500 to-purple-600' :
+                  post.post_type === 'homework' ? 'bg-gradient-to-br from-orange-500 to-orange-600' :
+                  'bg-gradient-to-br from-blue-500 to-blue-600'
+                ]"
+              >
+                {{ post.user?.name?.[0] || 'U' }}
+              </div>
+              <div>
+                <div class="font-semibold text-gray-900">{{ post.user?.name }}</div>
+                <div class="text-xs text-gray-500">{{ formatDate(post.created_at) }}</div>
+              </div>
+            </div>
+            <button v-if="authStore.currentUser && authStore.currentUser.id === post.user_id && authStore.hasPermission('course.post')" 
+              @click="deletePost(post)"
+              class="text-gray-400 hover:text-red-600 transition-colors">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Post Content -->
+          <div class="text-gray-800 text-sm leading-relaxed mb-3 prose prose-sm max-w-none" v-html="post.content"></div>
+          
+          <!-- Media Gallery -->
+          <div v-if="post.media && post.media.length > 0" class="mb-3">
+            <div :class="[
+              'grid gap-2',
+              post.media.length === 1 ? 'grid-cols-1' : 
+              post.media.length === 2 ? 'grid-cols-2' : 
+              post.media.length === 3 ? 'grid-cols-3' : 
+              'grid-cols-2'
+            ]">
+              <div v-for="(media, mediaIndex) in post.media" :key="mediaIndex" class="relative rounded-lg overflow-hidden bg-gray-100">
+                <!-- Image -->
+                <img v-if="media.media_type === 'image'" 
+                  :src="media.url" 
+                  :alt="media.file_name"
+                  class="w-full h-auto object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                  @click="openMediaModal(media.url)"
+                />
+                
+                <!-- Video -->
+                <video v-else-if="media.media_type === 'video'" 
+                  controls
+                  class="w-full h-auto"
+                  preload="metadata"
+                >
+                  <source :src="media.url" :type="media.mime_type">
+                  {{ t('course.video_not_supported') }}
+                </video>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Event Metadata -->
+          <div v-if="post.post_type === 'event' && post.metadata" class="bg-purple-50 rounded-lg p-3 mb-3 space-y-2">
+            <div v-if="post.metadata.event_start_date" class="flex items-center gap-2 text-sm text-purple-800">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span class="font-medium">{{ formatEventDate(post.metadata.event_start_date) }}</span>
+              <span v-if="post.metadata.event_end_date && post.metadata.event_end_date !== post.metadata.event_start_date" class="text-purple-600">
+                - {{ formatEventDate(post.metadata.event_end_date) }}
+              </span>
+            </div>
+            <div v-if="post.metadata.event_location" class="flex items-center gap-2 text-sm text-purple-700">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span>{{ post.metadata.event_location }}</span>
+            </div>
+            <div v-if="post.metadata.is_all_day" class="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs">
+              {{ t('course.all_day') }}
+            </div>
+          </div>
+          
+          <!-- Homework Metadata -->
+          <div v-if="post.post_type === 'homework' && post.metadata" class="bg-orange-50 rounded-lg p-3 mb-3 space-y-2">
+            <div v-if="post.metadata.due_date" class="flex items-center gap-2 text-sm text-orange-800">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span class="font-medium">{{ t('course.deadline') }}: {{ formatEventDate(post.metadata.due_date) }}</span>
+            </div>
+            <div v-if="post.metadata.session_info" class="text-sm text-orange-700">
+              <span class="font-medium">{{ t('class_detail.session') }}:</span> {{ post.metadata.session_info }}
+            </div>
+            
+            <!-- Submissions List (Visible to Everyone) -->
+            <div v-if="post.metadata.homework_id" class="mt-3 pt-3 border-t border-orange-200">
+              <button 
+                @click="toggleSubmissions(post.metadata.homework_id)"
+                class="flex items-center gap-2 text-sm font-medium text-orange-700 hover:text-orange-900 transition-colors"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span>{{ showSubmissions[post.metadata.homework_id] ? t('course.hide_submissions') : t('course.view_submissions') }} ({{ post.metadata.submissions_count || 0 }})</span>
+              </button>
+              
+              <!-- Submissions -->
+              <div v-if="showSubmissions[post.metadata.homework_id]" class="mt-3 space-y-2">
+                <div v-if="loadingSubmissions[post.metadata.homework_id]" class="text-center py-4">
+                  <div class="inline-block animate-spin rounded-full h-5 w-5 border-b-2 border-orange-600"></div>
+                </div>
+                
+                <div v-else-if="homeworkSubmissions[post.metadata.homework_id] && homeworkSubmissions[post.metadata.homework_id].length > 0" class="space-y-1.5">
+                  <div v-for="submission in homeworkSubmissions[post.metadata.homework_id]" :key="submission.id" 
+                    class="flex items-center justify-between p-2 bg-white rounded border border-orange-100">
+                    <div class="flex items-center gap-2">
+                      <div class="w-6 h-6 rounded-full bg-green-100 flex items-center justify-center">
+                        <svg class="w-3 h-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                      <span class="text-sm text-gray-700">{{ submission.student?.name || t('common.unknown') }}</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                      <span class="text-xs text-gray-500">{{ formatEventDate(submission.submitted_at) }}</span>
+                      <a v-if="submission.submission_link" 
+                        :href="submission.submission_link" 
+                        target="_blank"
+                        class="text-xs text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                        {{ t('course.view_file') }}
+                      </a>
+                    </div>
+                  </div>
+                </div>
+                
+                <div v-else class="text-center py-4 text-sm text-gray-500">
+                  {{ t('course.no_submissions') }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Reactions Summary -->
+          <div v-if="post.likes_count > 0" class="flex items-center justify-between py-2 text-xs text-gray-500 border-b">
+            <div class="flex items-center space-x-1">
+              <div class="flex -space-x-1">
+                <span v-for="reaction in getTopReactions(post)" :key="reaction" class="text-base">{{ reaction }}</span>
+              </div>
+              <span class="ml-1">{{ post.likes_count }}</span>
+            </div>
+            <div v-if="post.comments_count > 0">
+              {{ post.comments_count }} {{ t('course.comments') }}
+            </div>
+          </div>
+
+          <!-- Post Actions Bar -->
+          <div class="flex items-center justify-around py-1 border-b">
+            <!-- Like Button with Reaction Picker -->
+            <div class="relative flex-1">
+              <button 
+                @click="toggleLike(post, 'like')"
+                @mouseenter="showReactionPicker(post)"
+                @mouseleave="hideReactionPicker(post)"
+                :class="[
+                  'w-full flex items-center justify-center space-x-2 py-2 rounded-lg transition-colors',
+                  post.user_reaction ? 'text-blue-600 font-semibold' : 'text-gray-600 hover:bg-gray-50'
+                ]"
+              >
+                <span class="text-xl">{{ getReactionEmoji(post.user_reaction) }}</span>
+                <span class="text-sm">{{ post.user_reaction ? t(`course.${post.user_reaction}`) : t('course.like') }}</span>
+              </button>
+
+              <!-- Reaction Picker -->
+              <div 
+                v-if="post.showReactions"
+                @mouseenter="keepReactionPicker(post)"
+                @mouseleave="hideReactionPicker(post)"
+                class="absolute bottom-full left-0 mb-2 bg-white rounded-full shadow-2xl border border-gray-200 px-2 py-2 flex space-x-1 z-10"
+              >
+                <button
+                  v-for="reaction in reactions"
+                  :key="reaction.type"
+                  @click.stop="toggleLike(post, reaction.type)"
+                  class="hover:scale-125 transition-transform text-2xl p-1"
+                  :title="t(`course.${reaction.type}`)"
+                >
+                  {{ reaction.emoji }}
+                </button>
+              </div>
+            </div>
+
+            <!-- Comment Button with Badge -->
+            <button
+              @click="toggleComments(post)"
+              class="flex-1 flex items-center justify-center space-x-2 py-2 text-gray-600 hover:bg-gray-50 rounded-lg transition-colors relative"
+            >
+              <div class="relative">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                <!-- Comment Count Badge -->
+                <span
+                  v-if="post.comments_count > 0"
+                  class="absolute -top-2 -right-2 bg-blue-500 text-white text-xs font-bold rounded-full h-4 min-w-[16px] flex items-center justify-center px-1 shadow-sm"
+                >
+                  {{ post.comments_count }}
+                </span>
+              </div>
+              <span class="text-sm">{{ t('course.comment') }}</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Comments Section -->
+        <div v-if="post.comments_count > 0 || post.showComments" class="px-4 pb-4 pt-2 bg-gray-50">
+          <!-- Preview Comments (shown by default) -->
+          <div v-if="!post.showComments && getPreviewComments(post).length > 0" class="space-y-3 mb-3">
+            <div v-for="comment in getPreviewComments(post)" :key="comment.id" 
+              :class="[
+                'flex gap-2',
+                (authStore.currentUser && comment.user_id === authStore.currentUser.id) ? 'flex-row-reverse' : '',
+                comment.parent_id ? ((authStore.currentUser && comment.user_id === authStore.currentUser.id) ? 'mr-10' : 'ml-10') : ''
+              ]">
+              <!-- Avatar -->
+              <div :class="[
+                'w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0 relative z-10',
+                (authStore.currentUser && comment.user_id === authStore.currentUser.id) ? 'bg-gradient-to-br from-blue-500 to-blue-600' : 'bg-gray-400'
+              ]">
+                {{ comment.user?.name?.[0] || 'U' }}
+              </div>
+              
+              <!-- Comment Content -->
+              <div class="flex-1 relative">
+                <div :class="[
+                  'rounded-lg px-3 py-2 shadow-sm relative',
+                  (authStore.currentUser && comment.user_id === authStore.currentUser.id) ? 'bg-blue-50 border border-blue-200' : 'bg-white',
+                  comment.parent_id ? 'border-l-4 border-blue-500' : ''
+                ]" style="z-index: 1;">
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="flex-1 min-w-0">
+                      <!-- Name, Badge, and Reply To in one line -->
+                      <div class="flex items-center flex-wrap gap-1 text-xs">
+                        <span class="font-semibold text-gray-900">{{ comment.user?.name }}</span>
+                        <span v-if="comment.user_id === post.user_id" class="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full text-[10px]">{{ t('course.author') }}</span>
+                        <span v-if="comment.parent_id && comment.parent_user_name" class="text-gray-500">
+                          • {{ t('course.replying_to') }} <span class="font-semibold text-gray-700">{{ comment.parent_user_name }}</span>
+                        </span>
+                      </div>
+                      
+                      <div class="text-sm text-gray-700 mt-1">{{ comment.content }}</div>
+                    </div>
+                    
+                    <!-- Delete Button (for own comments) -->
+                    <button 
+                      v-if="authStore.currentUser && comment.user_id === authStore.currentUser.id"
+                      @click="deleteComment(post, comment)"
+                      class="flex-shrink-0 text-gray-400 hover:text-red-600 transition-colors"
+                      :title="t('common.delete')"
+                    >
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+                <div :class="[
+                  'flex items-center gap-3 mt-1 px-3 text-xs text-gray-500',
+                  (authStore.currentUser && comment.user_id === authStore.currentUser.id) ? 'flex-row-reverse' : ''
+                ]">
+                  <span>{{ formatDate(comment.created_at) }}</span>
+                  <button 
+                    @click="toggleCommentLike(post, comment)"
+                    :class="{ 'text-blue-600 font-semibold': comment.is_liked }"
+                    class="hover:underline"
+                  >
+                    {{ t('course.like') }} {{ comment.likes_count > 0 ? `(${comment.likes_count})` : '' }}
+                  </button>
+                  <button 
+                    @click="replyToComment(post, comment)"
+                    class="hover:underline"
+                  >
+                    {{ t('course.reply') }}
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Show more comments button -->
+            <button 
+              v-if="post.comments_count > 2"
+              @click="toggleComments(post)"
+              class="text-sm text-gray-600 hover:text-gray-900 font-medium ml-10"
+            >
+              {{ t('course.view_all_comments', { count: post.comments_count }) }}
+            </button>
+          </div>
+
+          <!-- All Comments (when expanded) -->
+          <div v-if="post.showComments && post.comments && post.comments.length > 0" class="space-y-3 mb-3">
+            <div v-for="comment in getOrganizedComments(post)" :key="comment.id"
+              :class="[
+                'flex gap-2',
+                (authStore.currentUser && comment.user_id === authStore.currentUser.id) ? 'flex-row-reverse' : '',
+                comment.parent_id ? ((authStore.currentUser && comment.user_id === authStore.currentUser.id) ? 'mr-10' : 'ml-10') : ''
+              ]">
+              <!-- Avatar -->
+              <div :class="[
+                'w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0 relative z-10',
+                (authStore.currentUser && comment.user_id === authStore.currentUser.id) ? 'bg-gradient-to-br from-blue-500 to-blue-600' : 'bg-gray-400'
+              ]">
+                {{ comment.user?.name?.[0] || 'U' }}
+              </div>
+              
+              <!-- Comment Content -->
+              <div class="flex-1 relative">
+                <div :class="[
+                  'rounded-lg px-3 py-2 shadow-sm relative',
+                  (authStore.currentUser && comment.user_id === authStore.currentUser.id) ? 'bg-blue-50 border border-blue-200' : 'bg-white',
+                  comment.parent_id ? 'border-l-4 border-blue-500' : ''
+                ]" style="z-index: 1;">
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="flex-1 min-w-0">
+                      <!-- Name, Badge, and Reply To in one line -->
+                      <div class="flex items-center flex-wrap gap-1 text-xs">
+                        <span class="font-semibold text-gray-900">{{ comment.user?.name }}</span>
+                        <span v-if="comment.user_id === post.user_id" class="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full text-[10px]">{{ t('course.author') }}</span>
+                        <span v-if="comment.parent_id && comment.parent_user_name" class="text-gray-500">
+                          • {{ t('course.replying_to') }} <span class="font-semibold text-gray-700">{{ comment.parent_user_name }}</span>
+                        </span>
+                      </div>
+                      
+                      <div class="text-sm text-gray-700 mt-1">{{ comment.content }}</div>
+                    </div>
+                    
+                    <!-- Delete Button (for own comments) -->
+                    <button 
+                      v-if="authStore.currentUser && comment.user_id === authStore.currentUser.id"
+                      @click="deleteComment(post, comment)"
+                      class="flex-shrink-0 text-gray-400 hover:text-red-600 transition-colors"
+                      :title="t('common.delete')"
+                    >
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+                <div :class="[
+                  'flex items-center gap-3 mt-1 px-3 text-xs text-gray-500',
+                  (authStore.currentUser && comment.user_id === authStore.currentUser.id) ? 'flex-row-reverse' : ''
+                ]">
+                  <span>{{ formatDate(comment.created_at) }}</span>
+                  <button 
+                    @click="toggleCommentLike(post, comment)"
+                    :class="{ 'text-blue-600 font-semibold': comment.is_liked }"
+                    class="hover:underline"
+                  >
+                    {{ t('course.like') }} {{ comment.likes_count > 0 ? `(${comment.likes_count})` : '' }}
+                  </button>
+                  <button 
+                    @click="replyToComment(post, comment)"
+                    class="hover:underline"
+                  >
+                    {{ t('course.reply') }}
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Hide comments button -->
+            <button 
+              @click="post.showComments = false"
+              class="text-sm text-gray-600 hover:text-gray-900 font-medium ml-10"
+            >
+              {{ t('course.hide_comments') }}
+            </button>
+          </div>
+
+          <!-- Comment Input -->
+          <div class="flex space-x-2 mt-3">
+            <div class="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
+              {{ authStore.currentUser?.name?.[0] || 'U' }}
+            </div>
+            <div class="flex-1 flex space-x-2">
+              <input
+                v-model="post.newComment"
+                @keyup.enter="addComment(post)"
+                type="text"
+                :placeholder="post.replyingTo ? t('course.reply_to', { name: post.replyingTo.user?.name }) : t('course.write_comment')"
+                class="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <button
+                v-if="post.replyingTo"
+                @click="cancelReply(post)"
+                class="px-3 py-2 text-gray-600 hover:text-gray-900 text-sm"
+              >
+                ✕
+              </button>
+              <button
+                @click="addComment(post)"
+                :disabled="!post.newComment?.trim()"
+                class="px-4 py-2 bg-blue-600 text-white rounded-full text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div>
+
+    <!-- Right Sidebar - Events & Homework -->
+    <div class="w-80 flex-shrink-0 space-y-4">
+      <!-- Upcoming Events Box -->
+      <div class="bg-white rounded-lg shadow p-4 sticky top-6">
+        <h3 class="font-semibold text-gray-900 mb-4 flex items-center">
+          <svg class="w-5 h-5 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          {{ t('course.upcoming_events') }}
+        </h3>
+        
+        <div v-if="loadingEvents" class="text-center py-8">
+          <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-purple-600"></div>
+        </div>
+        
+        <div v-else-if="upcomingEvents.length === 0" class="text-center py-8 text-gray-500 text-sm">
+          {{ t('course.no_events') }}
+        </div>
+        
+        <div v-else class="space-y-3 max-h-[400px] overflow-y-auto">
+          <div v-for="event in upcomingEvents" :key="event.id" 
+            class="p-3 rounded-lg border border-purple-100 hover:bg-purple-50 cursor-pointer transition-colors">
+            <div class="flex items-start gap-2">
+              <div class="text-2xl">📅</div>
+              <div class="flex-1 min-w-0">
+                <!-- Display class code if available -->
+                <div v-if="event.class_code" class="text-xs font-semibold text-purple-600 mb-1">
+                  {{ event.class_code }}
+                </div>
+                <!-- Display full description (event content) -->
+                <div class="event-content text-sm text-gray-900 mb-1" v-html="event.description || event.title"></div>
+                <div class="text-xs text-gray-600">
+                  {{ formatEventDate(event.start_date) }}
+                </div>
+                <div v-if="event.location" class="text-xs text-gray-500 mt-1 flex items-center">
+                  <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  {{ event.location }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Upcoming Homework Box -->
+      <div class="bg-white rounded-lg shadow p-4">
+        <h3 class="font-semibold text-gray-900 mb-4 flex items-center">
+          <svg class="w-5 h-5 mr-2 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          {{ t('course.upcoming_homework') }}
+        </h3>
+        
+        <div v-if="loadingHomework" class="text-center py-8">
+          <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-orange-600"></div>
+        </div>
+        
+        <div v-else-if="upcomingHomework.length === 0" class="text-center py-8 text-gray-500 text-sm">
+          {{ t('course.no_homework') }}
+        </div>
+        
+        <div v-else class="space-y-3 max-h-[400px] overflow-y-auto">
+          <div v-for="homework in upcomingHomework" :key="homework.id" 
+            class="p-3 rounded-lg border border-orange-100 hover:bg-orange-50 transition-colors">
+            <div class="flex items-start gap-2">
+              <div class="text-2xl">📝</div>
+              <div class="flex-1 min-w-0">
+                <div class="font-medium text-sm text-gray-900 truncate">{{ homework.title }}</div>
+                <div class="text-xs text-gray-600 mt-1">
+                  <span v-if="homework.deadline">
+                    {{ t('course.deadline') }}: {{ formatEventDate(homework.deadline) }}
+                  </span>
+                  <span v-else class="text-gray-400">{{ t('course.no_deadline') }}</span>
+                </div>
+                <div v-if="homework.description" class="text-xs text-gray-500 mt-1 line-clamp-2" v-html="stripHtmlTags(homework.description)"></div>
+                <div v-if="homework.session" class="text-xs text-purple-600 mt-1">
+                  {{ t('class_detail.session') }} {{ homework.session.session_number }}: {{ homework.session.lesson_title }}
+                </div>
+                <div v-if="homework.files_data && homework.files_data.length" class="mt-2 space-y-1">
+                  <a v-for="file in homework.files_data" :key="file.id" 
+                    :href="`/api/course/homework/${homework.id}/file/${file.google_id}`"
+                    class="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    {{ file.name }}
+                  </a>
+              </div>
+                
+                <!-- Submit Section (For Students and Parents) -->
+                <div v-if="authStore.hasRole('student') || authStore.hasRole('parent')" class="mt-3 pt-3 border-t border-orange-200">
+                  <!-- Parent View: Show individual submit sections for each child -->
+                  <div v-if="homework.is_parent && homework.children_count > 0" class="space-y-3">
+                    <div
+                      v-for="child in getChildrenForHomework(homework)"
+                      :key="child.user_id"
+                      class="p-3 rounded-lg border"
+                      :class="child.submission_status === 'submitted' || child.submission_status === 'graded' ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'"
+                    >
+                      <!-- Child Name Header -->
+                      <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-medium text-gray-900">{{ child.name }}</span>
+                        <span v-if="child.submission_status === 'submitted' || child.submission_status === 'graded'" class="text-xs text-green-600 flex items-center gap-1">
+                          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          Đã nộp
+                        </span>
+                      </div>
+
+                      <!-- Already Submitted - Show Link -->
+                      <a
+                        v-if="child.submission_status === 'submitted' || child.submission_status === 'graded'"
+                        :href="child.unit_folder_link || '#'"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="flex items-center gap-2 text-blue-600 hover:text-blue-700 text-xs hover:underline"
+                        :class="{ 'pointer-events-none': !child.unit_folder_link }"
+                        @click.stop
+                      >
+                        <span>Xem folder bài tập</span>
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </a>
+
+                      <!-- Not Submitted - Show Submit Form -->
+                      <div v-else class="space-y-2">
+                        <input
+                          type="file"
+                          :id="`homeworkFile-${homework.id}-${child.user_id}`"
+                          @change="(e) => handleFileSelectForChild(homework.id, child.user_id, e)"
+                          class="hidden"
+                        />
+                        <div v-if="selectedFiles[`${homework.id}-${child.user_id}`]" class="flex items-center gap-2 text-xs text-gray-700 bg-white px-2 py-1 rounded">
+                          <svg class="w-3 h-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          <span class="truncate flex-1">{{ selectedFiles[`${homework.id}-${child.user_id}`].name }}</span>
+                          <button @click="clearFileForChild(homework.id, child.user_id)" class="text-red-500 hover:text-red-700">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                        <div class="flex gap-2">
+                          <button
+                            @click="triggerFileInputForChild(homework.id, child.user_id)"
+                            class="flex-1 px-3 py-1.5 text-xs font-medium text-orange-700 bg-white border border-orange-200 rounded hover:bg-orange-50 transition-colors"
+                          >
+                            <svg class="w-3 h-3 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                            </svg>
+                            {{ selectedFiles[`${homework.id}-${child.user_id}`] ? 'Đổi file' : 'Chọn file' }}
+                          </button>
+                          <button
+                            v-if="selectedFiles[`${homework.id}-${child.user_id}`]"
+                            @click="submitHomeworkForChild(homework.id, child.user_id)"
+                            :disabled="submittingHomework[`${homework.id}-${child.user_id}`]"
+                            class="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded hover:bg-green-700 disabled:opacity-50 transition-colors"
+                          >
+                            <svg v-if="submittingHomework[`${homework.id}-${child.user_id}`]" class="animate-spin w-3 h-3 inline mr-1" fill="none" viewBox="0 0 24 24">
+                              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            {{ submittingHomework[`${homework.id}-${child.user_id}`] ? 'Đang nộp...' : 'Nộp bài' }}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Student View: Already Submitted - Clickable to open unit folder -->
+                  <a
+                    v-else-if="!homework.is_parent && (homework.submission_status === 'submitted' || homework.submission_status === 'graded')"
+                    :href="homework.unit_folder_link || '#'"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="flex items-center gap-2 text-green-600 hover:text-green-700 text-xs cursor-pointer transition-colors group"
+                    :class="{ 'pointer-events-none': !homework.unit_folder_link }"
+                    :title="homework.unit_folder_link ? 'Click để mở folder bài tập của bạn' : 'Đã nộp bài'"
+                    @click.stop
+                  >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span class="font-medium group-hover:underline">✓ Đã nộp bài</span>
+                    <svg v-if="homework.unit_folder_link" class="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </a>
+
+                  <!-- Not Submitted - Show Submit Form -->
+                  <div v-else class="space-y-2">
+                    <input
+                      type="file"
+                      :id="`homeworkFile-${homework.id}`"
+                      @change="(e) => handleFileSelect(homework.id, e)"
+                      class="hidden"
+                    />
+                    <div v-if="selectedFiles[homework.id]" class="flex items-center gap-2 text-xs text-gray-700">
+                      <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <span class="truncate">{{ selectedFiles[homework.id].name }}</span>
+                      <button @click="clearFile(homework.id)" class="text-red-500 hover:text-red-700">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div class="flex gap-2">
+                      <button
+                        @click="triggerFileInput(homework.id)"
+                        class="flex-1 px-3 py-1.5 text-xs font-medium text-orange-700 bg-orange-50 border border-orange-200 rounded hover:bg-orange-100 transition-colors"
+                      >
+                        <svg class="w-3 h-3 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        {{ selectedFiles[homework.id] ? 'Đổi file' : 'Chọn file' }}
+                      </button>
+                      <button
+                        v-if="selectedFiles[homework.id]"
+                        @click="handleSubmitHomework(homework.id)"
+                        :disabled="submittingHomework[homework.id]"
+                        class="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded hover:bg-green-700 disabled:opacity-50 transition-colors"
+                      >
+                        <svg v-if="submittingHomework[homework.id]" class="animate-spin w-3 h-3 inline mr-1" fill="none" viewBox="0 0 24 24">
+                          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        {{ submittingHomework[homework.id] ? 'Đang nộp...' : 'Nộp bài' }}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Student Selection Modal (for parents with multiple children) -->
+  <div
+    v-if="showStudentSelectionModal"
+    class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+    @click.self="showStudentSelectionModal = false"
+  >
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-semibold text-gray-900">Chọn học viên</h3>
+        <button
+          @click="showStudentSelectionModal = false"
+          class="text-gray-400 hover:text-gray-600 transition-colors"
+        >
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <p class="text-sm text-gray-600 mb-4">
+        Bạn có nhiều con học trong lớp này. Vui lòng chọn học viên để nộp bài tập:
+      </p>
+
+      <div class="space-y-2 mb-6">
+        <label
+          v-for="child in childrenInClass"
+          :key="child.user_id"
+          class="flex items-center p-3 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+          :class="{
+            'border-blue-500 bg-blue-50': selectedStudentForSubmission === child.user_id,
+            'border-gray-200': selectedStudentForSubmission !== child.user_id
+          }"
+        >
+          <input
+            type="radio"
+            :value="child.user_id"
+            v-model="selectedStudentForSubmission"
+            class="mr-3"
+          />
+          <div>
+            <div class="font-medium text-gray-900">{{ child.name }}</div>
+            <div class="text-xs text-gray-500">{{ child.student_code }}</div>
+          </div>
+        </label>
+      </div>
+
+      <div class="flex gap-3">
+        <button
+          @click="showStudentSelectionModal = false"
+          class="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+        >
+          Hủy
+        </button>
+        <button
+          @click="submitForSelectedStudent"
+          :disabled="!selectedStudentForSubmission"
+          class="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          Nộp bài
+        </button>
+      </div>
+    </div>
+  </div>
+
+</template>
+
+<script setup>
+import { ref, onMounted, onUnmounted, watch, nextTick, computed } from 'vue';
+import { useI18n } from '../../composables/useI18n';
+import { useAuthStore } from '../../stores/auth';
+import { useSwal } from '../../composables/useSwal';
+import { useQuillEditor } from '../../composables/useQuillEditor';
+import { useClassroomSocket } from '../../composables/useClassroomSocket';
+import axios from 'axios';
+import { useRoute } from 'vue-router';
+import ZaloChatView from '../zalo/components/ZaloChatView.vue';
+
+const { t } = useI18n();
+const authStore = useAuthStore();
+const route = useRoute();
+const { confirmDelete, showSuccess, showError, Swal } = useSwal();
+const classroomSocket = useClassroomSocket();
+
+// Check if user can create any type of post
+const canCreateAnyPost = computed(() => {
+  return authStore.hasPermission('course.post') ||
+         authStore.hasPermission('course.create_event') ||
+         authStore.hasPermission('course.create_homework');
+});
+
+// Check if user can view Zalo chat tab
+const canViewZaloChat = computed(() => {
+  const checkResult = {
+    hasSelectedClass: !!selectedClass.value,
+    selectedClassId: selectedClass.value?.id,
+    selectedClassName: selectedClass.value?.name,
+    userId: authStore.user?.id,
+    isSuperAdmin: authStore.isSuperAdmin,
+    hasPermission: authStore.hasPermission('course.view_zalo_chat'),
+    zaloGroupId: selectedClass.value?.zalo_group_id,
+  };
+  console.log('[ClassroomBoard] 🔍 canViewZaloChat check:', checkResult);
+
+  if (!selectedClass.value) {
+    console.log('[ClassroomBoard] ❌ No class selected, returning false');
+    return false;
+  }
+
+  const userId = authStore.user?.id;
+  if (!userId) {
+    console.log('[ClassroomBoard] ❌ No user ID');
+    return false;
+  }
+
+  // Check if user has explicit permission
+  if (authStore.hasPermission('course.view_zalo_chat')) {
+    console.log('[ClassroomBoard] ✅ User has permission course.view_zalo_chat');
+    return true;
+  }
+
+  // Check if user is homeroom teacher
+  if (selectedClass.value.homeroom_teacher_id === userId) {
+    console.log('[ClassroomBoard] User is homeroom teacher');
+    return true;
+  }
+
+  // Check if user is a subject teacher of this class
+  if (selectedClass.value.teachers && Array.isArray(selectedClass.value.teachers)) {
+    const isSubjectTeacher = selectedClass.value.teachers.some(t => t.id === userId);
+    if (isSubjectTeacher) {
+      console.log('[ClassroomBoard] User is subject teacher');
+      return true;
+    }
+  }
+
+  // Check if user is head of department of the class's main subject
+  if (selectedClass.value.subject?.teachers && Array.isArray(selectedClass.value.subject.teachers)) {
+    const isHeadOfDepartment = selectedClass.value.subject.teachers.some(t => {
+      return t.id === userId && t.pivot?.is_head === true;
+    });
+    if (isHeadOfDepartment) {
+      console.log('[ClassroomBoard] User is head of department');
+      return true;
+    }
+  }
+
+  return false;
+});
+
+// Create Zalo group item compatible with ZaloChatView
+const zaloGroupItem = computed(() => {
+  if (!selectedClass.value?.zalo_group_id || !groupExists.value) return null;
+
+  return {
+    id: selectedClass.value.zalo_group_id,
+    groupId: selectedClass.value.zalo_group_id,
+    name: zaloGroupData.value?.name || zaloGroupData.value?.displayName || selectedClass.value.zalo_group_name || 'Nhóm lớp học',
+    displayName: zaloGroupData.value?.displayName || zaloGroupData.value?.name || selectedClass.value.zalo_group_name || 'Nhóm lớp học',
+    avatar_url: zaloGroupData.value?.avatar_url || null,
+    members_count: zaloGroupData.value?.members_count || 0,
+  };
+});
+
+const loading = ref(false);
+const posting = ref(false);
+const posts = ref([]);
+const newPost = ref({ content: '' });
+const classId = ref(null);
+const availableClasses = ref([]);
+const loadingClasses = ref(false);
+const selectedMedia = ref([]);
+
+// Composer Tab State
+const activeComposerTab = ref('post'); // 'post', 'event', 'homework', 'zalo_chat'
+
+// Zalo Chat State
+const validatingGroup = ref(false);
+const groupExists = ref(true);
+const zaloGroupData = ref(null);
+const selectedClass = ref(null);
+
+// Quill Editors
+const postEditorRef = ref(null);
+const eventEditorRef = ref(null);
+const homeworkEditorRef = ref(null);
+
+const postEditor = useQuillEditor({ placeholder: t('course.write_something') });
+const eventEditor = useQuillEditor({ placeholder: t('course.description') });
+const homeworkEditor = useQuillEditor({ placeholder: t('course.homework_description') });
+
+// Events
+const creatingEvent = ref(false);
+const upcomingEvents = ref([]);
+const loadingEvents = ref(false);
+const classStudents = ref([]);
+const eventForm = ref({
+  content: '',
+  event_start_date: '',
+  event_end_date: '',
+  event_location: '',
+  is_all_day: false,
+  event_attendees: []
+});
+
+// Homework
+const creatingHomework = ref(false);
+const availableSessions = ref([]);
+const sessionFiles = ref([]);
+const loadingSessionFiles = ref(false);
+const loadingHomework = ref(false);
+const selectedFiles = ref({});
+const submittingHomework = ref({});
+const showStudentSelectionModal = ref(false);
+const childrenInClass = ref([]);
+const selectedStudentForSubmission = ref(null);
+const currentHomeworkForSubmission = ref(null);
+const upcomingHomework = ref([]);
+const showSubmissions = ref({});
+const loadingSubmissions = ref({});
+const homeworkSubmissions = ref({});
+const assignmentType = ref('all');
+const homeworkForm = ref({
+  title: '',
+  description: '',
+  session_id: '',
+  file_ids: [],
+  deadline: '',
+  assigned_to: []
+});
+
+// Watch for tab changes to load necessary data and init editors
+watch(activeComposerTab, async (newTab) => {
+  await nextTick();
+
+  if (newTab === 'post' && postEditorRef.value) {
+    postEditor.editorRef.value = postEditorRef.value;
+    postEditor.initEditor();
+  } else if (newTab === 'event' && eventEditorRef.value) {
+    eventEditor.editorRef.value = eventEditorRef.value;
+    eventEditor.initEditor();
+  } else if (newTab === 'homework') {
+    if (homeworkEditorRef.value) {
+      homeworkEditor.editorRef.value = homeworkEditorRef.value;
+      homeworkEditor.initEditor();
+    }
+    if (availableSessions.value.length === 0) {
+      await loadSessions();
+    }
+  } else if (newTab === 'zalo_chat') {
+    // Validate group when switching to zalo chat tab
+    if (selectedClass.value?.zalo_group_id) {
+      await validateGroup();
+    }
+  }
+});
+
+// Watch for class changes (including programmatic changes)
+watch(classId, async (newClassId, oldClassId) => {
+  if (newClassId && newClassId !== oldClassId) {
+    console.log('[ClassroomBoard] 🔄 Class ID changed:', { oldClassId, newClassId });
+
+    // Leave old classroom room
+    if (oldClassId && classroomSocket.isConnected.value) {
+      classroomSocket.leaveClassroom(oldClassId);
+    }
+
+    // Join new classroom room
+    if (newClassId && classroomSocket.isConnected.value) {
+      classroomSocket.joinClassroom(newClassId);
+    }
+
+    await onClassChange();
+  }
+});
+
+// Mention system
+const mentionInput = ref(null);
+const mentionText = ref('');
+const showMentionDropdown = ref(false);
+const mentionOptions = ref([]);
+const filteredMentionOptions = ref([]);
+const selectedMentionIndex = ref(0);
+const taggedPeople = ref([]);
+const currentMentionQuery = ref('');
+
+// Reactions like LinkedIn
+const reactions = [
+  { type: 'like', emoji: '👍' },
+  { type: 'love', emoji: '❤️' },
+  { type: 'support', emoji: '🙏' },
+  { type: 'celebrate', emoji: '🎉' },
+  { type: 'insightful', emoji: '💡' },
+  { type: 'funny', emoji: '😄' },
+];
+
+const loadPosts = async () => {
+  if (!classId.value) return;
+  
+  loading.value = true;
+  try {
+    const response = await axios.get(`/api/course/classes/${classId.value}/posts`);
+    posts.value = (response.data.data || []).map(post => ({
+      ...post,
+      showReactions: false,
+      showComments: false,
+      newComment: '',
+      replyingTo: null,
+      comments: post.comments || [],
+      previewComments: [],
+    }));
+    
+    // Load preview comments for each post
+    for (const post of posts.value) {
+      if (post.comments_count > 0) {
+        await loadPreviewComments(post);
+      }
+    }
+  } catch (error) {
+    console.error('Error loading posts:', error);
+  } finally {
+    loading.value = false;
+  }
+};
+
+// Media handling functions
+const handleMediaSelect = (event) => {
+  const files = Array.from(event.target.files);
+  
+  files.forEach(file => {
+    // Validate file type
+    if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
+      Swal.fire({
+        icon: 'error',
+        title: t('common.error'),
+        text: t('course.invalid_file_type'),
+        confirmButtonText: t('common.ok')
+      });
+      return;
+    }
+    
+    // Validate file size (200MB max)
+    if (file.size > 200 * 1024 * 1024) {
+      Swal.fire({
+        icon: 'error',
+        title: t('common.error'),
+        text: t('course.file_too_large'),
+        confirmButtonText: t('common.ok')
+      });
+      return;
+    }
+    
+    // Create preview URL
+    const preview = URL.createObjectURL(file);
+    
+    selectedMedia.value.push({
+      file,
+      preview,
+      type: file.type,
+      name: file.name
+    });
+  });
+  
+  // Reset input
+  event.target.value = '';
+};
+
+const removeMedia = (index) => {
+  // Revoke preview URL to free memory
+  URL.revokeObjectURL(selectedMedia.value[index].preview);
+  selectedMedia.value.splice(index, 1);
+};
+
+const openMediaModal = (url) => {
+  // Open image in a new tab/window
+  window.open(url, '_blank');
+};
+
+const createPost = async () => {
+  if (!postEditor.getText()) return;
+  
+  posting.value = true;
+  try {
+    const formData = new FormData();
+    formData.append('class_id', classId.value);
+    formData.append('content', postEditor.getContent());
+    
+    // Append media files only if there are any
+    if (selectedMedia.value.length > 0) {
+      selectedMedia.value.forEach((media) => {
+        formData.append('media[]', media.file);
+      });
+    }
+    
+    await axios.post(`/api/course/classes/${classId.value}/posts`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+    
+    // Clear editor and media
+    postEditor.clear();
+    selectedMedia.value.forEach(media => URL.revokeObjectURL(media.preview));
+    selectedMedia.value = [];
+    
+    // Success notification
+    Swal.fire({
+      icon: 'success',
+      title: t('common.success'),
+      text: t('course.post_created_successfully'),
+      timer: 2000,
+      showConfirmButton: false
+    });
+    
+    await loadPosts();
+  } catch (error) {
+    console.error('Error creating post:', error);
+    console.error('Error details:', error.response?.data);
+    
+    const errorMessage = error.response?.data?.message || t('course.error_creating_post');
+    Swal.fire({
+      icon: 'error',
+      title: t('common.error'),
+      text: errorMessage,
+      confirmButtonText: t('common.ok')
+    });
+  } finally {
+    posting.value = false;
+  }
+};
+
+const toggleLike = async (post, reactionType = 'like') => {
+  try {
+    const response = await axios.post('/api/course/posts/like', {
+      likeable_type: 'App\\Models\\CoursePost',
+      likeable_id: post.id,
+      reaction_type: reactionType,
+    });
+    post.user_reaction = response.data.action === 'liked' ? reactionType : null;
+    post.likes_count = response.data.likes_count;
+    post.showReactions = false;
+  } catch (error) {
+    console.error('Error toggling like:', error);
+  }
+};
+
+const deletePost = async (post) => {
+  const result = await confirmDelete(
+    t('course.confirm_delete_post'),
+    t('common.this_action_cannot_be_undone')
+  );
+  
+  if (!result.isConfirmed) return;
+  
+  try {
+    await axios.delete(`/api/course/classes/${classId.value}/posts/${post.id}`);
+    await loadPosts();
+    showSuccess(t('common.deleted_successfully'));
+  } catch (error) {
+    console.error('Error deleting post:', error);
+    showError(t('common.error_occurred'));
+  }
+};
+
+const toggleComments = async (post) => {
+  const willShow = !post.showComments;
+  
+  if (willShow) {
+    // Load comments first, then show
+    try {
+      const response = await axios.get(`/api/course/classes/${classId.value}/posts/${post.id}/comments`);
+      post.comments = response.data.data || [];
+      post.showComments = true; // Only set to true after data is loaded
+    } catch (error) {
+      console.error('Error loading comments:', error);
+    }
+  } else {
+    // Just hide
+    post.showComments = false;
+  }
+};
+
+const addComment = async (post) => {
+  if (!post.newComment?.trim()) return;
+  
+  const isReply = !!post.replyingTo;
+  
+  try {
+    await axios.post(`/api/course/classes/${classId.value}/posts/${post.id}/comments`, {
+      content: post.newComment,
+      parent_id: post.replyingTo?.id || null,
+    });
+    // Clear input and reply target first
+    const replyingTo = post.replyingTo;
+    post.newComment = '';
+    post.replyingTo = null;
+    
+    // Reload comments to get accurate count
+    if (post.showComments || isReply) {
+      // If it's a reply, load full comments to show the reply
+      const response = await axios.get(`/api/course/classes/${classId.value}/posts/${post.id}/comments`);
+      post.comments = response.data.data || [];
+      post.comments_count = response.data.data?.length || 0; // Update count from server
+      if (isReply) {
+        post.showComments = true; // Set to true after loading data
+      }
+    } else {
+      await loadPreviewComments(post);
+      // Update count from API
+      const countResponse = await axios.get(`/api/course/classes/${classId.value}/posts/${post.id}`);
+      post.comments_count = countResponse.data.data?.comments_count || 0;
+    }
+  } catch (error) {
+    console.error('Error adding comment:', error);
+  }
+};
+
+const showReactionPicker = (post) => {
+  post.showReactions = true;
+};
+
+const hideReactionPicker = (post) => {
+  setTimeout(() => {
+    post.showReactions = false;
+  }, 200);
+};
+
+const keepReactionPicker = (post) => {
+  post.showReactions = true;
+};
+
+const getReactionEmoji = (reactionType) => {
+  if (!reactionType) return '👍';
+  const reaction = reactions.find(r => r.type === reactionType);
+  return reaction ? reaction.emoji : '👍';
+};
+
+const getTopReactions = (post) => {
+  // For now, just show like emoji
+  // In the future, can aggregate reaction types from backend
+  return ['👍'];
+};
+
+const loadPreviewComments = async (post) => {
+  try {
+    const response = await axios.get(`/api/course/classes/${classId.value}/posts/${post.id}/comments`);
+    const allComments = response.data.data || [];
+    
+    if (allComments.length === 0) {
+      post.previewComments = [];
+      return;
+    }
+    
+    // Only get top-level comments (not replies) for preview
+    const topLevelComments = allComments.filter(c => !c.parent_id);
+    
+    if (topLevelComments.length === 0) {
+      post.previewComments = [];
+      return;
+    }
+    
+    // Find first comment by post author
+    const authorComment = topLevelComments.find(c => c.user_id === post.user_id);
+    
+    // Find comment with most interactions (likes)
+    const sortedByLikes = [...topLevelComments].sort((a, b) => (b.likes_count || 0) - (a.likes_count || 0));
+    const mostLikedComment = sortedByLikes[0];
+    
+    // Build preview list
+    const preview = [];
+    if (authorComment) {
+      preview.push(authorComment);
+    }
+    
+    // Add most liked if different from author comment
+    if (mostLikedComment && (!authorComment || mostLikedComment.id !== authorComment.id)) {
+      preview.push(mostLikedComment);
+    }
+    
+    // If we still have only 1 comment and there are more, add the first one
+    if (preview.length === 1 && topLevelComments.length > 1) {
+      const firstOther = topLevelComments.find(c => !preview.some(p => p.id === c.id));
+      if (firstOther) preview.push(firstOther);
+    }
+    
+    post.previewComments = preview.slice(0, 2);
+  } catch (error) {
+    console.error('Error loading preview comments:', error);
+  }
+};
+
+const getPreviewComments = (post) => {
+  return post.previewComments || [];
+};
+
+// Organize comments: parent followed by its replies (recursively)
+const getOrganizedComments = (post) => {
+  if (!post.comments || post.comments.length === 0) return [];
+  
+  const organized = [];
+  const allComments = [...post.comments];
+  
+  // Recursive function to add comment and all its nested replies
+  const addCommentWithReplies = (commentId, depth = 0) => {
+    // Find all direct replies to this comment
+    const replies = allComments
+      .filter(c => c.parent_id === commentId)
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    
+    // Add each reply and recursively add its replies
+    replies.forEach(reply => {
+      organized.push(reply);
+      addCommentWithReplies(reply.id, depth + 1); // Recursive call for nested replies
+    });
+  };
+  
+  // Get all parent comments (top-level)
+  const parents = allComments
+    .filter(c => !c.parent_id)
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  
+  // For each parent, add it and recursively add all its replies
+  parents.forEach(parent => {
+    organized.push(parent);
+    addCommentWithReplies(parent.id);
+  });
+  
+  return organized;
+};
+
+const toggleCommentLike = async (post, comment) => {
+  try {
+    const response = await axios.post('/api/course/posts/like', {
+      likeable_type: 'App\\Models\\CoursePostComment',
+      likeable_id: comment.id,
+      reaction_type: 'like',
+    });
+    comment.is_liked = response.data.action === 'liked';
+    comment.likes_count = response.data.likes_count;
+    
+    // Refresh comments to update sorting  
+    if (post.showComments) {
+      const commentsResponse = await axios.get(`/api/course/classes/${classId.value}/posts/${post.id}/comments`);
+      post.comments = commentsResponse.data.data || [];
+      // Comments will be organized by getOrganizedComments() in the template
+    } else {
+      await loadPreviewComments(post);
+    }
+  } catch (error) {
+    console.error('Error toggling comment like:', error);
+  }
+};
+
+const replyToComment = async (post, comment) => {
+  post.replyingTo = comment;
+  post.newComment = '';
+  
+  // If in preview mode, open full comments view
+  if (!post.showComments) {
+    try {
+      const response = await axios.get(`/api/course/classes/${classId.value}/posts/${post.id}/comments`);
+      post.comments = response.data.data || [];
+      post.showComments = true;
+    } catch (error) {
+      console.error('Error loading comments:', error);
+    }
+  }
+};
+
+const cancelReply = (post) => {
+  post.replyingTo = null;
+};
+
+const deleteComment = async (post, comment) => {
+  const confirmed = await confirmDelete(
+    t('course.confirm_delete_comment'),
+    t('common.this_action_cannot_be_undone')
+  );
+  
+  if (!confirmed) return;
+  
+  try {
+    await axios.delete(`/api/course/classes/${classId.value}/posts/${post.id}/comments/${comment.id}`);
+    
+    // Update comment count
+    const repliesCount = post.comments.filter(c => c.parent_id === comment.id).length;
+    post.comments_count = Math.max(0, (post.comments_count || 0) - 1 - repliesCount);
+    
+    // Reload comments to reflect changes immediately
+    if (post.showComments) {
+      const response = await axios.get(`/api/course/classes/${classId.value}/posts/${post.id}/comments`);
+      post.comments = response.data.data || [];
+    } else {
+      await loadPreviewComments(post);
+    }
+    
+    showSuccess(t('common.deleted_successfully'));
+  } catch (error) {
+    console.error('Error deleting comment:', error);
+    showError(t('common.error_occurred'));
+  }
+};
+
+const formatDate = (date) => {
+  const d = new Date(date);
+  const now = new Date();
+  const diff = Math.floor((now - d) / 1000); // seconds
+
+  if (diff < 60) return `${diff}s`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+  return d.toLocaleDateString('vi-VN');
+};
+
+const formatEventDate = (date) => {
+  const d = new Date(date);
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  
+  if (d.toDateString() === today.toDateString()) {
+    return `Hôm nay, ${d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`;
+  } else if (d.toDateString() === tomorrow.toDateString()) {
+    return `Ngày mai, ${d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`;
+  } else {
+    return d.toLocaleString('vi-VN', { 
+      day: '2-digit', 
+      month: '2-digit', 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+  }
+};
+
+// Load available classes
+const loadClasses = async () => {
+  console.log('[ClassroomBoard] 🔵 Starting loadClasses...');
+  loadingClasses.value = true;
+  try {
+    console.log('[ClassroomBoard] 📡 Calling API: /api/course/my-classes');
+    const response = await axios.get('/api/course/my-classes');
+    console.log('[ClassroomBoard] ✅ API Response:', response);
+    console.log('[ClassroomBoard] 📦 Response data:', response.data);
+    
+    availableClasses.value = response.data.data || [];
+    console.log('[ClassroomBoard] 📚 Available classes:', availableClasses.value);
+    console.log('[ClassroomBoard] 🔢 Number of classes:', availableClasses.value.length);
+    
+    // Auto-select first class if available
+    if (availableClasses.value.length > 0) {
+      classId.value = availableClasses.value[0].id;
+      console.log('[ClassroomBoard] ✨ Auto-selected class ID:', classId.value);
+      await loadPosts();
+      
+      // Only load students if user has permission to create posts/events
+      if (authStore.hasPermission('course.post')) {
+        await loadClassStudents();
+      }
+    } else {
+      console.warn('[ClassroomBoard] ⚠️ No classes available!');
+    }
+  } catch (error) {
+    console.error('[ClassroomBoard] ❌ Error loading classes:', error);
+    console.error('[ClassroomBoard] ❌ Error response:', error.response);
+    showError(t('common.error_occurred'));
+  } finally {
+    loadingClasses.value = false;
+    console.log('[ClassroomBoard] 🏁 loadClasses completed');
+  }
+};
+
+// Load upcoming events
+const loadUpcomingEvents = async () => {
+  loadingEvents.value = true;
+  try {
+    const response = await axios.get('/api/course/upcoming-events');
+    upcomingEvents.value = response.data.data || [];
+  } catch (error) {
+    console.error('Error loading upcoming events:', error);
+  } finally {
+    loadingEvents.value = false;
+  }
+};
+
+// Load upcoming homework
+const loadUpcomingHomework = async () => {
+  if (!classId.value) {
+    upcomingHomework.value = [];
+    return;
+  }
+
+  loadingHomework.value = true;
+  try {
+    const response = await axios.get('/api/course/homework', {
+      params: { class_id: classId.value, status: 'active' }
+    });
+    upcomingHomework.value = (response.data.data || []).sort((a, b) => {
+      const dateA = new Date(a.deadline || a.created_at);
+      const dateB = new Date(b.deadline || b.created_at);
+      return dateA - dateB;
+    });
+
+    // If user is a parent, load children in this class
+    if (authStore.hasRole('parent')) {
+      try {
+        const childrenResponse = await axios.get(`/api/course/my-children-in-class/${classId.value}`);
+        if (childrenResponse.data.success) {
+          childrenInClass.value = childrenResponse.data.data;
+        }
+      } catch (error) {
+        console.error('Error loading children:', error);
+        childrenInClass.value = [];
+      }
+    }
+  } catch (error) {
+    console.error('Error loading homework:', error);
+    upcomingHomework.value = [];
+  } finally {
+    loadingHomework.value = false;
+  }
+};
+
+// Load students in current class for tagging
+const loadClassStudents = async () => {
+  if (!classId.value) return;
+  try {
+    console.log('[ClassroomBoard] 📚 Loading students for mention system...');
+    
+    // Load current class students
+    const classResponse = await axios.get(`/api/quality/classes/${classId.value}/students`);
+    console.log('[ClassroomBoard] 📦 Class students response:', classResponse.data);
+    const classStudentsData = classResponse.data.data || [];
+    classStudents.value = classStudentsData;
+    console.log('[ClassroomBoard] ✅ Class students loaded:', classStudentsData.length);
+    
+    // Load ALL students from branch for broader tagging
+    const allStudentsResponse = await axios.get('/api/quality/students', {
+      params: { per_page: 1000 } // Get all students
+    });
+    console.log('[ClassroomBoard] 📦 All students response:', allStudentsResponse.data);
+    
+    // Handle paginated response
+    let allStudents = [];
+    if (Array.isArray(allStudentsResponse.data.data)) {
+      allStudents = allStudentsResponse.data.data;
+    } else if (allStudentsResponse.data.data && Array.isArray(allStudentsResponse.data.data.data)) {
+      // Paginated format: { data: { data: [...] } }
+      allStudents = allStudentsResponse.data.data.data;
+    } else if (Array.isArray(allStudentsResponse.data)) {
+      allStudents = allStudentsResponse.data;
+    }
+    console.log('[ClassroomBoard] ✅ All students loaded:', allStudents.length);
+    
+    // Get current class info
+    const currentClass = availableClasses.value.find(c => c.id === classId.value);
+    
+    // Build mention options with hierarchy
+    const options = [
+      // 1. Current class (tag all students in this class)
+      {
+        id: `class_${classId.value}`,
+        name: `👥 ${currentClass?.name || 'Cả lớp này'}`,
+        displayName: currentClass?.name || 'Cả lớp này',
+        type: 'class',
+        group: 'class',
+        user_ids: classStudentsData.map(s => s.user_id)
+      }
+    ];
+    
+    // 2. Students in current class
+    const classStudentIds = new Set(classStudentsData.map(s => s.user_id));
+    classStudentsData.forEach(s => {
+      options.push({
+        id: s.user_id,
+        name: s.user?.name || s.full_name,
+        displayName: s.user?.name || s.full_name,
+        type: 'student',
+        group: 'current_class',
+        classInfo: currentClass?.code,
+        user_ids: [s.user_id]
+      });
+    });
+    
+    // 3. All other students (from branch, not in current class)
+    if (allStudents && Array.isArray(allStudents)) {
+      allStudents.forEach(s => {
+        if (!classStudentIds.has(s.user_id)) {
+          options.push({
+            id: s.user_id,
+            name: s.user?.name || s.full_name,
+            displayName: s.user?.name || s.full_name,
+            type: 'student',
+            group: 'other_students',
+            user_ids: [s.user_id]
+          });
+        }
+      });
+    }
+    
+    console.log('[ClassroomBoard] ✅ Mention options built:', options.length);
+    mentionOptions.value = options;
+  } catch (error) {
+    console.error('[ClassroomBoard] ❌ Error loading students:', error);
+    console.error('[ClassroomBoard] ❌ Error response:', error.response);
+  }
+};
+
+// Validate if Zalo group still exists
+const validateGroup = async () => {
+  if (!selectedClass.value?.zalo_group_id || !selectedClass.value?.zalo_account_id) {
+    return;
+  }
+
+  try {
+    console.log('[ClassroomBoard] Validating group:', {
+      zalo_group_id: selectedClass.value.zalo_group_id,
+      zalo_account_id: selectedClass.value.zalo_account_id,
+    });
+
+    const response = await axios.post('/api/zalo/groups/validate', {
+      account_id: selectedClass.value.zalo_account_id,
+      group_id: selectedClass.value.zalo_group_id,
+    });
+
+    if (response.data.success) {
+      if (response.data.exists) {
+        groupExists.value = true;
+        zaloGroupData.value = response.data.data;
+
+        console.log('[ClassroomBoard] Group validated:', {
+          id: response.data.data.id,
+          name: response.data.data.name,
+          members_count: response.data.data.members_count,
+        });
+      } else {
+        console.warn('[ClassroomBoard] Group not found in Zalo');
+        groupExists.value = false;
+        zaloGroupData.value = null;
+      }
+    }
+  } catch (error) {
+    console.error('[ClassroomBoard] Error validating group:', error);
+  }
+};
+
+// On class change
+const onClassChange = async () => {
+  await loadPosts();
+  await loadUpcomingHomework(); // Load homework for this class
+
+  // Only load students if user has permission to create posts/events
+  if (authStore.hasPermission('course.post')) {
+    await loadClassStudents();
+    await loadSessions(); // Load sessions for homework modal
+  }
+
+  // Load class details with zalo group info and teacher relationships
+  if (classId.value) {
+    try {
+      // Include relationships needed for permission check
+      const response = await axios.get(`/api/quality/classes/${classId.value}`, {
+        params: {
+          include: 'teachers,subject.teachers,homeroomTeacher'
+        }
+      });
+      if (response.data.success) {
+        selectedClass.value = response.data.data;
+        console.log('[ClassroomBoard] ✅ Class data loaded:', {
+          id: selectedClass.value.id,
+          name: selectedClass.value.name,
+          zalo_group_id: selectedClass.value.zalo_group_id,
+          homeroom_teacher_id: selectedClass.value.homeroom_teacher_id,
+          teachers_count: selectedClass.value.teachers?.length || 0,
+          subject_teachers_count: selectedClass.value.subject?.teachers?.length || 0,
+        });
+
+        // Force re-check after selectedClass is set
+        console.log('[ClassroomBoard] 🔄 Forcing canViewZaloChat re-check after class data loaded');
+      } else {
+        console.error('[ClassroomBoard] ❌ API returned success=false:', response.data);
+      }
+    } catch (error) {
+      console.error('[ClassroomBoard] Error loading class data:', error);
+    }
+  }
+};
+
+// Get grouped options for dropdown
+const getGroupedOptions = (group) => {
+  return filteredMentionOptions.value.filter(opt => opt.group === group);
+};
+
+// Check if option is selected in dropdown (for keyboard navigation)
+const isSelectedInDropdown = (option) => {
+  const flatOptions = filteredMentionOptions.value;
+  const currentIndex = flatOptions.findIndex(opt => opt.id === option.id);
+  return currentIndex === selectedMentionIndex.value;
+};
+
+// Handle mention input
+const handleMentionInput = (e) => {
+  const text = e.target.value;
+  const cursorPos = e.target.selectionStart;
+  
+  // Find @ before cursor
+  const textBeforeCursor = text.substring(0, cursorPos);
+  const lastAtIndex = textBeforeCursor.lastIndexOf('@');
+  
+  if (lastAtIndex !== -1) {
+    // Get text after @
+    const query = textBeforeCursor.substring(lastAtIndex + 1);
+    
+    // Check if there's space after @ (means mention ended)
+    if (query.includes(' ') || query.includes('\n')) {
+      showMentionDropdown.value = false;
+      return;
+    }
+    
+    // Show dropdown and filter
+    currentMentionQuery.value = query.toLowerCase();
+    filteredMentionOptions.value = mentionOptions.value.filter(option => 
+      (option.displayName || option.name).toLowerCase().includes(currentMentionQuery.value)
+    );
+    showMentionDropdown.value = true;
+    selectedMentionIndex.value = 0;
+  } else {
+    showMentionDropdown.value = false;
+  }
+};
+
+// Handle mention keydown (arrow keys, enter, esc)
+const handleMentionKeydown = (e) => {
+  if (!showMentionDropdown.value) return;
+  
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    selectedMentionIndex.value = Math.min(
+      selectedMentionIndex.value + 1,
+      filteredMentionOptions.value.length - 1
+    );
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    selectedMentionIndex.value = Math.max(selectedMentionIndex.value - 1, 0);
+  } else if (e.key === 'Enter' && filteredMentionOptions.value.length > 0) {
+    e.preventDefault();
+    selectMention(filteredMentionOptions.value[selectedMentionIndex.value]);
+  } else if (e.key === 'Escape') {
+    showMentionDropdown.value = false;
+  }
+};
+
+// Select a mention
+const selectMention = (option) => {
+  // Check if already tagged
+  if (taggedPeople.value.find(p => p.id === option.id)) {
+    showMentionDropdown.value = false;
+    mentionText.value = '';
+    return;
+  }
+  
+  // Add to tagged people
+  taggedPeople.value.push(option);
+  
+  // Clear mention text
+  mentionText.value = '';
+  showMentionDropdown.value = false;
+};
+
+// Remove a tag
+const removeTag = (person) => {
+  taggedPeople.value = taggedPeople.value.filter(p => p.id !== person.id);
+};
+
+// Reset form based on tab
+const resetCurrentForm = () => {
+  if (activeComposerTab.value === 'post') {
+    postEditor.clear();
+  } else if (activeComposerTab.value === 'event') {
+    eventEditor.clear();
+    eventForm.value = {
+      content: '',
+      event_start_date: '',
+      event_end_date: '',
+      event_location: '',
+      is_all_day: false,
+      event_attendees: []
+    };
+  } else if (activeComposerTab.value === 'homework') {
+    homeworkEditor.clear();
+    homeworkForm.value = {
+      title: '',
+      description: '',
+      session_id: '',
+      file_ids: [],
+      deadline: '',
+      assigned_to: []
+    };
+    assignmentType.value = 'all';
+    sessionFiles.value = [];
+  }
+};
+
+// Create event
+const createEvent = async () => {
+  // Prevent multiple submissions
+  if (creatingEvent.value) return;
+  
+  if (!eventEditor.getText()) {
+    showError(t('course.error'));
+    return;
+  }
+
+  creatingEvent.value = true;
+  try {
+    await axios.post(`/api/course/classes/${classId.value}/posts`, {
+      class_id: classId.value,
+      content: eventEditor.getContent(),
+      post_type: 'event',
+      event_start_date: eventForm.value.event_start_date,
+      event_end_date: eventForm.value.event_end_date || eventForm.value.event_start_date,
+      event_location: eventForm.value.event_location,
+      is_all_day: eventForm.value.is_all_day,
+      event_attendees: []
+    });
+
+    showSuccess(t('course.event_created'));
+    resetCurrentForm();
+    activeComposerTab.value = 'post'; // Switch back to post tab
+    await loadPosts();
+    await loadUpcomingEvents(); // Refresh upcoming events
+  } catch (error) {
+    console.error('Error creating event:', error);
+    showError(t('common.error_occurred'));
+  } finally {
+    creatingEvent.value = false;
+  }
+};
+
+// =============== Homework Functions ===============
+
+const loadSessions = async () => {
+  if (!classId.value) return;
+  
+  try {
+    const response = await axios.get(`/api/course/homework/classes/${classId.value}/sessions`);
+    if (response.data.success) {
+      availableSessions.value = response.data.data || [];
+    }
+  } catch (error) {
+    console.error('Error loading sessions:', error);
+    showError(t('common.error_occurred'));
+  }
+};
+
+const onSessionChange = async () => {
+  if (!homeworkForm.value.session_id) {
+    sessionFiles.value = [];
+    return;
+  }
+  
+  loadingSessionFiles.value = true;
+  try {
+    const response = await axios.get(`/api/course/homework/sessions/${homeworkForm.value.session_id}/files`);
+    if (response.data.success) {
+      sessionFiles.value = response.data.data || [];
+    }
+  } catch (error) {
+    console.error('Error loading session files:', error);
+    showError(t('common.error_occurred'));
+  } finally {
+    loadingSessionFiles.value = false;
+  }
+};
+
+const getFileIcon = (mimeType) => {
+  if (!mimeType) return '📄';
+  
+  if (mimeType.includes('pdf')) return '📕';
+  if (mimeType.includes('word') || mimeType.includes('document')) return '📘';
+  if (mimeType.includes('powerpoint') || mimeType.includes('presentation')) return '📙';
+  if (mimeType.includes('excel') || mimeType.includes('spreadsheet')) return '📗';
+  if (mimeType.includes('image')) return '🖼️';
+  if (mimeType.includes('video')) return '🎥';
+  if (mimeType.includes('audio')) return '🎵';
+  if (mimeType.includes('zip') || mimeType.includes('rar') || mimeType.includes('compressed')) return '📦';
+  
+  return '📄';
+};
+
+const formatFileSize = (bytes) => {
+  if (!bytes) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+};
+
+const stripHtmlTags = (html) => {
+  if (!html) return '';
+  const tmp = document.createElement('DIV');
+  tmp.innerHTML = html;
+  return tmp.textContent || tmp.innerText || '';
+};
+
+// Homework Submission Functions
+const triggerFileInput = (homeworkId) => {
+  const fileInput = document.getElementById(`homeworkFile-${homeworkId}`);
+  if (fileInput) {
+    fileInput.click();
+  }
+};
+
+const handleFileSelect = (homeworkId, event) => {
+  const file = event.target.files[0];
+  if (file) {
+    selectedFiles.value[homeworkId] = file;
+  }
+};
+
+const clearFile = (homeworkId) => {
+  selectedFiles.value[homeworkId] = null;
+  const fileInput = document.getElementById(`homeworkFile-${homeworkId}`);
+  if (fileInput) {
+    fileInput.value = '';
+  }
+};
+
+// Handle submission with student selection (for parents)
+const handleSubmitHomework = async (homeworkId) => {
+  if (!selectedFiles.value[homeworkId]) {
+    showError({ title: 'Error', text: 'Please select a file to submit' });
+    return;
+  }
+
+  // Find the homework to check if user is parent
+  const homework = upcomingHomework.value.find(h => h.id === homeworkId);
+
+  if (homework && homework.is_parent && homework.children_count > 0) {
+    // User is a parent with children in this class
+    try {
+      // Load children in this class
+      const response = await axios.get(`/api/course/my-children-in-class/${classId.value}`);
+      if (response.data.success) {
+        childrenInClass.value = response.data.data;
+
+        if (childrenInClass.value.length === 1) {
+          // Only one child, submit directly
+          await submitHomework(homeworkId, childrenInClass.value[0].user_id);
+        } else if (childrenInClass.value.length > 1) {
+          // Multiple children, show modal to select
+          currentHomeworkForSubmission.value = homeworkId;
+          showStudentSelectionModal.value = true;
+        } else {
+          showError({ title: 'Error', text: 'No children found in this class' });
+        }
+      }
+    } catch (error) {
+      console.error('Error loading children:', error);
+      showError({ title: 'Error', text: 'Failed to load children information' });
+    }
+  } else {
+    // Regular student submission
+    await submitHomework(homeworkId, null);
+  }
+};
+
+// Submit homework for selected student
+const submitForSelectedStudent = async () => {
+  if (!selectedStudentForSubmission.value) {
+    showError({ title: 'Error', text: 'Please select a student' });
+    return;
+  }
+
+  showStudentSelectionModal.value = false;
+  await submitHomework(currentHomeworkForSubmission.value, selectedStudentForSubmission.value);
+
+  // Reset modal state
+  selectedStudentForSubmission.value = null;
+  currentHomeworkForSubmission.value = null;
+};
+
+// Actual submission function
+const submitHomework = async (homeworkId, studentId = null) => {
+  if (!selectedFiles.value[homeworkId]) {
+    showError({ title: 'Error', text: 'Please select a file to submit' });
+    return;
+  }
+
+  try {
+    submittingHomework.value[homeworkId] = true;
+
+    const formData = new FormData();
+    formData.append('file', selectedFiles.value[homeworkId]);
+
+    // If studentId is provided (parent submitting for child), include it
+    if (studentId) {
+      formData.append('student_id', studentId);
+    }
+
+    const response = await axios.post(`/api/course/homework/${homeworkId}/submit`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+
+    if (response.data.success) {
+      showSuccess({
+        title: 'Success!',
+        text: 'Homework submitted successfully'
+      });
+
+      // Clear selected file
+      clearFile(homeworkId);
+
+      // Small delay to ensure database commit completes
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Reload homework list and posts to update status and count
+      await Promise.all([
+        loadUpcomingHomework(),
+        loadPosts()
+      ]);
+    }
+  } catch (error) {
+    console.error('Error submitting homework:', error);
+    showError({
+      title: 'Error',
+      text: error.response?.data?.message || 'Failed to submit homework'
+    });
+  } finally {
+    submittingHomework.value[homeworkId] = false;
+  }
+};
+
+// New functions for parent multi-child submission
+const getChildrenForHomework = (homework) => {
+  if (!homework.is_parent) return [];
+
+  // Load children from API or use cached data
+  const children = childrenInClass.value;
+
+  // Merge children with their submission status
+  return children.map(child => {
+    const submission = homework.submissions?.find(s => s.student_id === child.user_id);
+    return {
+      ...child,
+      submission_status: submission ? submission.status : 'not_submitted',
+      unit_folder_link: submission?.unit_folder_link,
+      submission_link: submission?.submission_link
+    };
+  });
+};
+
+const triggerFileInputForChild = (homeworkId, childUserId) => {
+  const fileInput = document.getElementById(`homeworkFile-${homeworkId}-${childUserId}`);
+  if (fileInput) {
+    fileInput.click();
+  }
+};
+
+const handleFileSelectForChild = (homeworkId, childUserId, event) => {
+  const file = event.target.files[0];
+  if (file) {
+    const key = `${homeworkId}-${childUserId}`;
+    selectedFiles.value[key] = file;
+  }
+};
+
+const clearFileForChild = (homeworkId, childUserId) => {
+  const key = `${homeworkId}-${childUserId}`;
+  selectedFiles.value[key] = null;
+  const fileInput = document.getElementById(`homeworkFile-${homeworkId}-${childUserId}`);
+  if (fileInput) {
+    fileInput.value = '';
+  }
+};
+
+const submitHomeworkForChild = async (homeworkId, childUserId) => {
+  const key = `${homeworkId}-${childUserId}`;
+
+  if (!selectedFiles.value[key]) {
+    showError({ title: 'Error', text: 'Please select a file to submit' });
+    return;
+  }
+
+  try {
+    submittingHomework.value[key] = true;
+
+    const formData = new FormData();
+    formData.append('file', selectedFiles.value[key]);
+    formData.append('student_id', childUserId);
+
+    const response = await axios.post(`/api/course/homework/${homeworkId}/submit`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+
+    if (response.data.success) {
+      showSuccess({
+        title: 'Success!',
+        text: 'Homework submitted successfully'
+      });
+
+      // Clear selected file for this child
+      clearFileForChild(homeworkId, childUserId);
+
+      // Small delay to ensure database commit completes
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Reload homework list and posts to update status and count
+      await Promise.all([
+        loadUpcomingHomework(),
+        loadPosts()
+      ]);
+    }
+  } catch (error) {
+    console.error('Error submitting homework:', error);
+    showError({
+      title: 'Error',
+      text: error.response?.data?.message || 'Failed to submit homework'
+    });
+  } finally {
+    submittingHomework.value[key] = false;
+  }
+};
+
+// Toggle submissions list
+const toggleSubmissions = async (homeworkId) => {
+  showSubmissions.value[homeworkId] = !showSubmissions.value[homeworkId];
+
+  // Load submissions if showing and not already loaded
+  if (showSubmissions.value[homeworkId] && !homeworkSubmissions.value[homeworkId]) {
+    await loadSubmissions(homeworkId);
+  }
+};
+
+// Load submissions for a homework
+const loadSubmissions = async (homeworkId) => {
+  try {
+    loadingSubmissions.value[homeworkId] = true;
+    
+    const response = await axios.get(`/api/course/homework/${homeworkId}/submissions`);
+    
+    if (response.data.success) {
+      homeworkSubmissions.value[homeworkId] = response.data.data || [];
+    }
+  } catch (error) {
+    console.error('Error loading submissions:', error);
+    showError({ 
+      title: 'Error', 
+      text: 'Failed to load submissions' 
+    });
+  } finally {
+    loadingSubmissions.value[homeworkId] = false;
+  }
+};
+
+const createHomework = async () => {
+  if (creatingHomework.value) return;
+  
+  if (!homeworkForm.value.title.trim()) {
+    showError(t('course.homework_title_required'));
+    return;
+  }
+  
+  if (!homeworkForm.value.session_id) {
+    showError(t('course.session_required'));
+    return;
+  }
+  
+  if (homeworkForm.value.file_ids.length === 0) {
+    showError(t('course.files_required'));
+    return;
+  }
+  
+  creatingHomework.value = true;
+  try {
+    const payload = {
+      class_id: classId.value,
+      title: homeworkForm.value.title,
+      description: homeworkEditor.getContent() || '',
+      lesson_plan_session_id: homeworkForm.value.session_id,
+      file_ids: homeworkForm.value.file_ids,
+      deadline: homeworkForm.value.deadline || null,
+      assigned_to: assignmentType.value === 'all' ? null : homeworkForm.value.assigned_to,
+      status: 'active'
+    };
+    
+    await axios.post('/api/course/homework', payload);
+
+    showSuccess(t('course.homework_created'));
+    resetCurrentForm();
+    activeComposerTab.value = 'post'; // Switch back to post tab
+    await loadUpcomingHomework(); // Refresh homework list
+    await loadPosts(); // Refresh main feed to show new homework post
+  } catch (error) {
+    console.error('Error creating homework:', error);
+    showError(error.response?.data?.message || t('common.error_occurred'));
+  } finally {
+    creatingHomework.value = false;
+  }
+};
+
+// ==========================================
+// WEBSOCKET REAL-TIME UPDATES
+// ==========================================
+
+/**
+ * Initialize WebSocket connection and event listeners for real-time updates
+ */
+const initializeWebSocket = () => {
+  console.log('[ClassroomBoard] 🔌 Initializing WebSocket for real-time updates...');
+
+  // Connect to WebSocket server
+  classroomSocket.connect();
+
+  // Listen for new posts
+  classroomSocket.onPostCreated((data) => {
+    console.log('[ClassroomBoard] 📬 New post received:', data);
+
+    // Only add if it's for the current class
+    if (data.class_id === classId.value) {
+      // Check if post already exists (avoid duplicates)
+      const exists = posts.value.find(p => p.id === data.post.id);
+      if (!exists) {
+        posts.value.unshift(data.post);
+        showSuccess('Có bài đăng mới!');
+      }
+    }
+  });
+
+  // Listen for post updates
+  classroomSocket.onPostUpdated((data) => {
+    console.log('[ClassroomBoard] ✏️  Post updated:', data);
+
+    if (data.class_id === classId.value) {
+      const index = posts.value.findIndex(p => p.id === data.post.id);
+      if (index !== -1) {
+        posts.value[index] = { ...posts.value[index], ...data.post };
+      }
+    }
+  });
+
+  // Listen for post deletions
+  classroomSocket.onPostDeleted((data) => {
+    console.log('[ClassroomBoard] 🗑️  Post deleted:', data);
+
+    if (data.class_id === classId.value) {
+      const index = posts.value.findIndex(p => p.id === data.post_id);
+      if (index !== -1) {
+        posts.value.splice(index, 1);
+      }
+    }
+  });
+
+  // Listen for new comments
+  classroomSocket.onCommentCreated((data) => {
+    console.log('[ClassroomBoard] 💬 New comment received:', data);
+    console.log('[ClassroomBoard] 🔍 Current classId:', classId.value);
+    console.log('[ClassroomBoard] 🔍 Event class_id:', data.class_id);
+
+    if (data.class_id === classId.value) {
+      console.log('[ClassroomBoard] ✅ Class ID matches');
+      console.log('[ClassroomBoard] 🔍 Looking for post:', data.comment.post_id, 'Type:', typeof data.comment.post_id);
+      console.log('[ClassroomBoard] 🔍 Total posts:', posts.value.length);
+      console.log('[ClassroomBoard] 🔍 Post IDs in array:', posts.value.map(p => ({ id: p.id, type: typeof p.id })));
+
+      // Use == to allow type coercion (string "15" == number 15)
+      const postIndex = posts.value.findIndex(p => p.id == data.comment.post_id);
+      console.log('[ClassroomBoard] 🔍 Found post at index:', postIndex);
+
+      if (postIndex !== -1) {
+        const post = posts.value[postIndex];
+        console.log('[ClassroomBoard] 📝 Post found:', post.id, '- Current comments:', post.comments?.length || 0);
+
+        // Initialize comments array if needed
+        if (!post.comments) {
+          console.log('[ClassroomBoard] 🆕 Initializing comments array');
+          post.comments = [];
+        }
+
+        // Check if comment already exists
+        const exists = post.comments.find(c => c.id === data.comment.id);
+        console.log('[ClassroomBoard] 🔍 Comment exists?', exists ? 'YES' : 'NO');
+
+        if (!exists) {
+          // Add comment and update count - trigger reactivity by creating new object
+          posts.value[postIndex] = {
+            ...post,
+            comments: [...post.comments, data.comment],
+            comments_count: (post.comments_count || 0) + 1
+          };
+
+          console.log('[ClassroomBoard] ✅ Comment added, new count:', posts.value[postIndex].comments_count);
+
+          // Update preview comments to show the new comment in collapsed view
+          loadPreviewComments(posts.value[postIndex]);
+          console.log('[ClassroomBoard] 🔄 Preview comments updated');
+
+          // Show toast notification
+          showSuccess(t('course.new_comment_received') || 'New comment received');
+        } else {
+          console.log('[ClassroomBoard] ⚠️  Comment already exists, skipping');
+        }
+      } else {
+        console.log('[ClassroomBoard] ❌ Post not found!');
+      }
+    } else {
+      console.log('[ClassroomBoard] ❌ Class ID mismatch!');
+    }
+  });
+
+  // Listen for comment updates
+  classroomSocket.onCommentUpdated((data) => {
+    console.log('[ClassroomBoard] ✏️  Comment updated:', data);
+
+    if (data.class_id === classId.value) {
+      const postIndex = posts.value.findIndex(p => p.id === data.comment.post_id);
+      if (postIndex !== -1) {
+        const post = posts.value[postIndex];
+        if (post.comments) {
+          const commentIndex = post.comments.findIndex(c => c.id === data.comment.id);
+          if (commentIndex !== -1) {
+            // Update comment - trigger reactivity by creating new object
+            const updatedComments = [...post.comments];
+            updatedComments[commentIndex] = { ...updatedComments[commentIndex], ...data.comment };
+
+            posts.value[postIndex] = {
+              ...post,
+              comments: updatedComments
+            };
+
+            console.log('[ClassroomBoard] ✅ Comment updated');
+
+            // Update preview comments in case the updated comment is in preview
+            loadPreviewComments(posts.value[postIndex]);
+            console.log('[ClassroomBoard] 🔄 Preview comments updated after edit');
+          }
+        }
+      }
+    }
+  });
+
+  // Listen for comment deletions
+  classroomSocket.onCommentDeleted((data) => {
+    console.log('[ClassroomBoard] 🗑️  Comment deleted:', data);
+
+    if (data.class_id === classId.value) {
+      const postIndex = posts.value.findIndex(p => p.id === data.post_id);
+      if (postIndex !== -1) {
+        const post = posts.value[postIndex];
+        if (post.comments) {
+          const commentIndex = post.comments.findIndex(c => c.id === data.comment_id);
+          if (commentIndex !== -1) {
+            // Remove comment and update count - trigger reactivity
+            const newComments = [...post.comments];
+            newComments.splice(commentIndex, 1);
+
+            posts.value[postIndex] = {
+              ...post,
+              comments: newComments,
+              comments_count: Math.max(0, (post.comments_count || 0) - 1)
+            };
+
+            console.log('[ClassroomBoard] ✅ Comment deleted, new count:', posts.value[postIndex].comments_count);
+
+            // Update preview comments to reflect the deletion
+            loadPreviewComments(posts.value[postIndex]);
+            console.log('[ClassroomBoard] 🔄 Preview comments updated after deletion');
+          }
+        }
+      }
+    }
+  });
+
+  // Listen for post reactions
+  classroomSocket.onPostReaction((data) => {
+    console.log('[ClassroomBoard] ❤️  Post reaction:', data);
+
+    if (data.class_id === classId.value) {
+      const post = posts.value.find(p => p.id === data.post_id);
+      if (post) {
+        // Update reaction counts
+        if (data.action === 'added') {
+          post.reactions_count = (post.reactions_count || 0) + 1;
+        } else if (data.action === 'removed') {
+          post.reactions_count = Math.max(0, (post.reactions_count || 0) - 1);
+        }
+
+        // Update user's reaction state if available
+        if (data.user_id === authStore.user?.id) {
+          post.user_has_reacted = data.action === 'added';
+        }
+      }
+    }
+  });
+
+  // Join current classroom room if classId is already set
+  if (classId.value) {
+    console.log('[ClassroomBoard] 🚪 Joining classroom room:', classId.value);
+    classroomSocket.joinClassroom(classId.value);
+  }
+};
+
+
+onMounted(async () => {
+  console.log('[ClassroomBoard] 🚀 Component mounted!');
+  console.log('[ClassroomBoard] 👤 Current user:', authStore.currentUser);
+  console.log('[ClassroomBoard] 🔑 Has course.post permission:', authStore.hasPermission('course.post'));
+
+  await loadClasses();
+  await loadUpcomingEvents();
+  await loadUpcomingHomework();
+
+  // Initialize post editor (default tab)
+  await nextTick();
+  if (postEditorRef.value) {
+    postEditor.editorRef.value = postEditorRef.value;
+    postEditor.initEditor();
+  }
+
+  // Initialize WebSocket for real-time updates
+  initializeWebSocket();
+
+  console.log('[ClassroomBoard] ✅ Initialization complete');
+});
+
+onUnmounted(() => {
+  console.log('[ClassroomBoard] 🔌 Component unmounting, cleaning up WebSocket...');
+
+  // Leave current classroom room
+  if (classId.value) {
+    classroomSocket.leaveClassroom(classId.value);
+  }
+
+  // Disconnect WebSocket
+  classroomSocket.disconnect();
+});
+</script>
+
+<style scoped>
+/* Quill Editor Customization */
+:deep(.ql-toolbar) {
+  border-bottom: 1px solid #d1d5db;
+  background-color: #f9fafb;
+}
+
+:deep(.ql-container) {
+  border: 0;
+}
+
+:deep(.ql-editor) {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  min-height: 80px;
+}
+
+:deep(.ql-editor.ql-blank::before) {
+  color: #9ca3af;
+  font-style: italic;
+}
+
+:deep(.ql-editor p) {
+  margin-bottom: 0.5rem;
+}
+
+:deep(.ql-editor ul),
+:deep(.ql-editor ol) {
+  margin-left: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+:deep(.ql-editor blockquote) {
+  border-left: 4px solid #d1d5db;
+  padding-left: 1rem;
+  font-style: italic;
+  margin: 0.5rem 0;
+}
+
+:deep(.ql-editor pre) {
+  background-color: #f3f4f6;
+  padding: 0.5rem;
+  border-radius: 0.25rem;
+  margin: 0.5rem 0;
+}
+
+:deep(.ql-editor a) {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+/* Prose styling for post content */
+:deep(.prose) {
+  color: #1f2937;
+}
+
+:deep(.prose p) {
+  margin-bottom: 0.5rem;
+}
+
+:deep(.prose ul),
+:deep(.prose ol) {
+  margin-left: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+:deep(.prose li) {
+  margin-bottom: 0.25rem;
+}
+
+:deep(.prose blockquote) {
+  border-left: 4px solid #d1d5db;
+  padding-left: 1rem;
+  font-style: italic;
+  margin: 0.5rem 0;
+  color: #4b5563;
+}
+
+:deep(.prose pre) {
+  background-color: #f3f4f6;
+  padding: 0.5rem;
+  border-radius: 0.25rem;
+  margin: 0.5rem 0;
+  font-size: 0.75rem;
+}
+
+:deep(.prose a) {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+:deep(.prose a:hover) {
+  color: #1e40af;
+}
+
+:deep(.prose strong) {
+  font-weight: 700;
+}
+
+:deep(.prose em) {
+  font-style: italic;
+}
+
+:deep(.prose h1),
+:deep(.prose h2),
+:deep(.prose h3) {
+  font-weight: 700;
+  margin-top: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+:deep(.prose h1) {
+  font-size: 1.25rem;
+}
+
+:deep(.prose h2) {
+  font-size: 1.125rem;
+}
+
+:deep(.prose h3) {
+  font-size: 1rem;
+}
+
+/* Quill Editor List Styles - Hide the UI elements for cleaner display */
+:deep(.ql-editor .ql-ui) {
+  display: none !important;
+}
+
+:deep(.ql-editor ol),
+:deep(.ql-editor ul) {
+  padding-left: 1.5rem;
+  margin: 0.5rem 0;
+}
+
+:deep(.ql-editor ol > li) {
+  list-style-type: decimal;
+  padding-left: 0.25rem;
+}
+
+:deep(.ql-editor ul > li) {
+  list-style-type: disc;
+  padding-left: 0.25rem;
+}
+
+:deep(.ql-editor li::before) {
+  display: none;
+}
+
+/* Remove data-list attribute styling interference */
+:deep(.ql-editor li[data-list]) {
+  counter-reset: none !important;
+  counter-increment: none !important;
+}
+
+:deep(.ql-editor li[data-list="bullet"]) {
+  list-style-type: disc !important;
+}
+
+:deep(.ql-editor li[data-list="ordered"]) {
+  list-style-type: decimal !important;
+}
+
+/* Prose content rendering (for posts) */
+:deep(.prose ol),
+:deep(.prose ul) {
+  padding-left: 1.5rem;
+  margin: 0.5rem 0;
+}
+
+:deep(.prose ol > li) {
+  list-style-type: decimal;
+}
+
+:deep(.prose ul > li) {
+  list-style-type: disc;
+}
+
+:deep(.prose .ql-ui) {
+  display: none !important;
+}
+
+:deep(.prose li[data-list="bullet"]) {
+  list-style-type: disc !important;
+}
+
+:deep(.prose li[data-list="ordered"]) {
+  list-style-type: decimal !important;
+}
+
+/* Event box content rendering */
+:deep(.event-content ol),
+:deep(.event-content ul) {
+  padding-left: 1.25rem;
+  margin: 0.25rem 0;
+}
+
+:deep(.event-content ol) {
+  list-style-type: decimal;
+}
+
+:deep(.event-content ul) {
+  list-style-type: disc;
+}
+
+:deep(.event-content li[data-list="bullet"]) {
+  list-style-type: disc !important;
+}
+
+:deep(.event-content li[data-list="ordered"]) {
+  list-style-type: decimal !important;
+}
+
+:deep(.event-content .ql-ui) {
+  display: none !important;
+}
+
+:deep(.event-content p) {
+  margin: 0;
+  font-weight: 500;
+}
+</style>

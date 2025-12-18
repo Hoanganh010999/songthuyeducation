@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Cash Accounts API</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; max-width: 1200px; margin: 0 auto; }
+        h1 { color: #333; }
+        button { padding: 10px 20px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        pre { background: #f4f4f4; padding: 15px; border-radius: 4px; overflow-x: auto; }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+        #results { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Test Cash Accounts API</h1>
+    
+    <div>
+        <h3>Authentication</h3>
+        <label>Token: <input type="text" id="token" style="width: 500px;" placeholder="Paste your token here"></label>
+        <button onclick="testAuth()">Test Auth</button>
+    </div>
+
+    <div style="margin-top: 20px;">
+        <h3>Test Endpoints</h3>
+        <button onclick="testCashAccountsList()">📋 GET /api/accounting/cash-accounts</button>
+        <button onclick="testCashAccountsListNoFilters()">📋 GET (No Filters)</button>
+        <button onclick="testCashAccountsSummary()">💰 GET /api/accounting/cash-accounts/summary</button>
+        <button onclick="testCreateAccount()">➕ POST (Create Test Account)</button>
+    </div>
+
+    <div id="results"></div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        let AUTH_TOKEN = '';
+
+        function getToken() {
+            AUTH_TOKEN = document.getElementById('token').value || localStorage.getItem('auth_token') || '';
+            return AUTH_TOKEN;
+        }
+
+        function log(message, type = 'info') {
+            const results = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = type;
+            div.innerHTML = `<h3>${message}</h3>`;
+            results.appendChild(div);
+        }
+
+        function logPre(data) {
+            const results = document.getElementById('results');
+            const pre = document.createElement('pre');
+            pre.textContent = JSON.stringify(data, null, 2);
+            results.appendChild(pre);
+        }
+
+        async function makeRequest(url, options = {}) {
+            const token = getToken();
+            if (!token) {
+                log('❌ No token provided!', 'error');
+                return;
+            }
+
+            try {
+                log(`🔄 Requesting: ${url}`, 'info');
+                const response = await fetch(url, {
+                    ...options,
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        ...options.headers
+                    }
+                });
+
+                log(`Status: ${response.status} ${response.statusText}`, response.ok ? 'success' : 'error');
+                
+                const data = await response.json();
+                logPre(data);
+                
+                return data;
+            } catch (error) {
+                log(`❌ Error: ${error.message}`, 'error');
+                logPre(error);
+            }
+        }
+
+        async function testAuth() {
+            const data = await makeRequest(`${API_BASE}/api/user`);
+            if (data) {
+                log('✅ Authentication successful!', 'success');
+                localStorage.setItem('auth_token', getToken());
+            }
+        }
+
+        async function testCashAccountsList() {
+            const params = new URLSearchParams({
+                is_active: '1',
+                branch_id: '1'
+            });
+            await makeRequest(`${API_BASE}/api/accounting/cash-accounts?${params}`);
+        }
+
+        async function testCashAccountsListNoFilters() {
+            await makeRequest(`${API_BASE}/api/accounting/cash-accounts`);
+        }
+
+        async function testCashAccountsSummary() {
+            await makeRequest(`${API_BASE}/api/accounting/cash-accounts/summary?branch_id=1`);
+        }
+
+        async function testCreateAccount() {
+            const data = await makeRequest(`${API_BASE}/api/accounting/cash-accounts`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    name: 'Test Account ' + Date.now(),
+                    type: 'cash',
+                    balance: 1000000,
+                    branch_id: 1,
+                    is_active: true
+                })
+            });
+        }
+    </script>
+</body>
+</html>
+

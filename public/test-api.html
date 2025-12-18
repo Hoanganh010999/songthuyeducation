@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Test API</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #1e1e1e; color: #d4d4d4; }
+        .test { background: #2d2d2d; padding: 15px; margin: 10px 0; border-radius: 8px; border-left: 4px solid #007acc; }
+        .success { border-color: #4ec9b0; }
+        .error { border-color: #f48771; }
+        button { background: #007acc; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin: 5px; }
+        button:hover { background: #005a9e; }
+        pre { background: #1e1e1e; padding: 10px; border-radius: 5px; overflow-x: auto; }
+        input { background: #3c3c3c; border: 1px solid #555; color: #d4d4d4; padding: 8px; border-radius: 5px; width: 300px; }
+    </style>
+</head>
+<body>
+    <h1>🧪 API Test Suite</h1>
+    
+    <div>
+        <label>Token: <input type="text" id="token" placeholder="Paste token từ localStorage"></label>
+        <button onclick="loadToken()">Load từ localStorage</button>
+    </div>
+
+    <button onclick="testWallet()">Test Wallet API</button>
+    <button onclick="testResetPassword()">Test Reset Password</button>
+    <button onclick="testRoute()">Test Route List</button>
+    
+    <div id="results"></div>
+
+    <script>
+        const API_URL = 'http://127.0.0.1:8000';
+
+        function loadToken() {
+            const token = localStorage.getItem('token');
+            if (token) {
+                document.getElementById('token').value = token;
+                alert('✅ Token loaded: ' + token.substring(0, 20) + '...');
+            } else {
+                alert('❌ No token found in localStorage');
+            }
+        }
+
+        function getToken() {
+            return document.getElementById('token').value || localStorage.getItem('token');
+        }
+
+        async function testWallet() {
+            const token = getToken();
+            const resultDiv = document.createElement('div');
+            resultDiv.className = 'test';
+            resultDiv.innerHTML = '<h3>🔄 Testing Wallet API...</h3>';
+            document.getElementById('results').prepend(resultDiv);
+
+            try {
+                const response = await fetch(`${API_URL}/api/wallets/my-wallet`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    resultDiv.className = 'test success';
+                    resultDiv.innerHTML = `
+                        <h3>✅ Wallet API Success (${response.status})</h3>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                } else if (response.status === 404) {
+                    resultDiv.className = 'test';
+                    resultDiv.innerHTML = `
+                        <h3>ℹ️ Wallet Not Found (404) - This is OK</h3>
+                        <p>User chưa có wallet, đây là behavior bình thường.</p>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                } else {
+                    throw new Error(`HTTP ${response.status}: ${JSON.stringify(data)}`);
+                }
+            } catch (error) {
+                resultDiv.className = 'test error';
+                resultDiv.innerHTML = `
+                    <h3>❌ Wallet API Error</h3>
+                    <pre>${error.message}</pre>
+                `;
+            }
+        }
+
+        async function testResetPassword() {
+            const token = getToken();
+            const userId = prompt('Enter User ID to reset:', '1');
+            if (!userId) return;
+
+            const resultDiv = document.createElement('div');
+            resultDiv.className = 'test';
+            resultDiv.innerHTML = '<h3>🔄 Testing Reset Password...</h3>';
+            document.getElementById('results').prepend(resultDiv);
+
+            try {
+                const response = await fetch(`${API_URL}/api/users/${userId}/reset-password`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ reset_type: 'default' })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    resultDiv.className = 'test success';
+                    resultDiv.innerHTML = `
+                        <h3>✅ Reset Password Success (${response.status})</h3>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                } else {
+                    throw new Error(`HTTP ${response.status}: ${JSON.stringify(data)}`);
+                }
+            } catch (error) {
+                resultDiv.className = 'test error';
+                resultDiv.innerHTML = `
+                    <h3>❌ Reset Password Error</h3>
+                    <pre>${error.message}</pre>
+                `;
+            }
+        }
+
+        async function testRoute() {
+            const resultDiv = document.createElement('div');
+            resultDiv.className = 'test';
+            resultDiv.innerHTML = '<h3>📋 Checking Routes...</h3>';
+            document.getElementById('results').prepend(resultDiv);
+
+            const routes = [
+                'GET /api/wallets/my-wallet',
+                'POST /api/users/{id}/reset-password',
+                'GET /api/test-auth'
+            ];
+
+            resultDiv.innerHTML = `
+                <h3>📋 Expected Routes</h3>
+                <pre>${routes.join('\n')}</pre>
+                <p>Check Laravel: <code>php artisan route:list --path=wallets</code></p>
+            `;
+        }
+
+        // Auto-load token on page load
+        window.addEventListener('load', loadToken);
+    </script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+

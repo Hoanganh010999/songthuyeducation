@@ -1,0 +1,700 @@
+const express = require('express');
+const router = express.Router();
+const { verifyApiKey } = require('../middleware/auth');
+const { initializeZalo, isZaloReady, reinitializeZalo } = require('../services/zaloClient');
+
+/**
+ * POST /api/auth/initialize
+ * Initialize Zalo connection with QR code
+ */
+router.post('/initialize', verifyApiKey, async (req, res) => {
+  try {
+    console.log('🔐 [POST /api/auth/initialize] Starting initialization...');
+    console.log('   Request body:', JSON.stringify(req.body));
+    console.log('   Request headers:', JSON.stringify(req.headers));
+    
+    // Check if force new login is requested
+    const forceNew = req.body.forceNew === true || req.body.force_new === true;
+    console.log('   Force new login:', forceNew);
+    
+    let qrCodeDataUrl = null;
+    let qrCallbackReceived = false;
+    
+    console.log('🔐 Initializing Zalo...');
+    
+    // Initialize with QR callback
+    // The callback will be called with base64 image data from qr.png file
+    // Pass forceNew to allow creating new account even if one exists
+    await initializeZalo((qrBase64) => {
+      console.log('✅ QR Code callback received');
+      console.log('   QR Code length:', qrBase64 ? qrBase64.length : 0);
+      qrCodeDataUrl = qrBase64;
+      qrCallbackReceived = true;
+    }, forceNew);
+    
+    console.log('   QR callback received:', qrCallbackReceived);
+    console.log('   QR Code data URL:', qrCodeDataUrl ? 'Present' : 'Missing');
+    
+    if (qrCodeDataUrl) {
+      console.log('✅ Sending QR code to client');
+      res.json({
+        success: true,
+        message: 'QR Code generated successfully. Please scan with Zalo app.',
+        qrCode: qrCodeDataUrl,
+      });
+    } else {
+      console.log('❌ QR code not generated');
+      // If already logged in, return appropriate message
+      const { isZaloReady } = require('../services/zaloClient');
+      if (isZaloReady() && !forceNew) {
+        res.status(400).json({
+          success: false,
+          message: 'Already logged in. Use forceNew=true to add a new account.',
+          alreadyLoggedIn: true,
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          message: 'Failed to generate QR code. Please check zalo-service logs.',
+        });
+      }
+    }
+  } catch (error) {
+    console.error('❌ Initialize endpoint error:', error);
+    console.error('   Error message:', error.message);
+    console.error('   Error stack:', error.stack);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to initialize Zalo',
+    });
+  }
+});
+
+/**
+ * GET /api/auth/status
+ * Check Zalo connection status
+ */
+router.get('/status', verifyApiKey, (req, res) => {
+  const ready = isZaloReady();
+  console.log('📊 Status check:');
+  console.log('   isReady:', ready);
+  console.log('   timestamp:', new Date().toISOString());
+  
+  res.json({
+    success: true,
+    isReady: ready,
+    timestamp: new Date().toISOString()
+  });
+});
+
+/**
+ * GET /api/auth/account-info
+ * Get current logged in account information
+ */
+router.get('/account-info', verifyApiKey, async (req, res) => {
+  try {
+    console.log('📋 [GET /api/auth/account-info] Getting account info...');
+    
+    const { getZaloClient } = require('../services/zaloClient');
+    const zalo = getZaloClient();
+    
+    if (!zalo) {
+      return res.status(400).json({
+        success: false,
+        message: 'Zalo client not initialized. Please login first.',
+      });
+    }
+    
+    let accountInfo = {
+      zalo_id: null,
+      name: null,
+      phone: null,
+      avatar_url: null,
+      cookie: null,
+      imei: process.env.ZALO_IMEI || null,
+      user_agent: process.env.ZALO_USER_AGENT || null,
+    };
+    
+    // Try to get cookie
+    try {
+      if (typeof zalo.getCookie === 'function') {
+        const cookieData = await zalo.getCookie();
+        console.log('   Cookie retrieved');
+        console.log('   Cookie data type:', typeof cookieData);
+        console.log('   Cookie data keys:', cookieData ? Object.keys(cookieData).join(', ') : 'null');
+        
+        if (cookieData) {
+          // Handle different cookie formats
+          // Cookie data might be tough-cookie format with cookies array
+          let cookiesArray = null;
+          
+          if (cookieData.cookies && Array.isArray(cookieData.cookies)) {
+            // Tough-cookie format: {cookies: [...]}
+            cookiesArray = cookieData.cookies;
+            accountInfo.cookie = cookieData; // Store full cookie data
+            console.log('   Cookie format: tough-cookie with', cookiesArray.length, 'cookies');
+          } else if (Array.isArray(cookieData)) {
+            // Direct array
+            cookiesArray = cookieData;
+            accountInfo.cookie = cookieData;
+            console.log('   Cookie format: direct array with', cookiesArray.length, 'cookies');
+          } else if (typeof cookieData === 'object') {
+            accountInfo.cookie = cookieData;
+            console.log('   Cookie format: object');
+          }
+          
+          // Try to extract zalo_id from cookies array
+          if (cookiesArray && cookiesArray.length > 0) {
+            console.log('   🔍 Searching in cookies array...');
+            
+            // Look for cookies that might contain user ID
+            for (const cookie of cookiesArray) {
+              if (cookie && typeof cookie === 'object') {
+                const cookieKey = cookie.key || cookie.name || '';
+                const cookieValue = cookie.value || '';
+                
+                console.log(`   Cookie: ${cookieKey} = ${cookieValue.substring(0, 50)}...`);
+                
+                // Check if cookie value contains user ID (long numeric string)
+                if (cookieValue && /^\d{15,}$/.test(cookieValue)) {
+                  accountInfo.zalo_id = cookieValue;
+                  console.log(`   ✅ Found zalo_id in cookie ${cookieKey}:`, accountInfo.zalo_id);
+                  break;
+                }
+                
+                // Check if cookie key suggests it contains user ID
+                if (cookieKey && /uid|userId|zaloId|user_id/i.test(cookieKey)) {
+                  if (cookieValue && /^\d+$/.test(cookieValue) && cookieValue.length >= 10) {
+                    accountInfo.zalo_id = cookieValue;
+                    console.log(`   ✅ Found zalo_id in cookie ${cookieKey}:`, accountInfo.zalo_id);
+                    break;
+                  }
+                }
+              }
+            }
+            
+            // If still not found, try to extract from cookie values using patterns
+            if (!accountInfo.zalo_id) {
+              const allCookieValues = cookiesArray
+                .map(c => c && typeof c === 'object' ? (c.value || '') : '')
+                .join(' ');
+              
+              console.log('   🔍 Searching in all cookie values...');
+              const patterns = [
+                /(\d{15,})/g, // Long numeric ID (15+ digits)
+                /uid[=:]"?(\d{10,})"?/i,
+                /userId[=:]"?(\d{10,})"?/i,
+              ];
+              
+              for (const pattern of patterns) {
+                const matches = allCookieValues.match(pattern);
+                if (matches && matches.length > 0) {
+                  // Take the longest match (likely to be user ID)
+                  const longestMatch = matches.sort((a, b) => b.length - a.length)[0];
+                  if (longestMatch && longestMatch.length >= 10) {
+                    accountInfo.zalo_id = longestMatch.replace(/[^\d]/g, ''); // Remove non-digits
+                    console.log('   ✅ Zalo ID extracted from cookie values:', accountInfo.zalo_id);
+                    break;
+                  }
+                }
+              }
+            }
+          }
+          
+          // Fallback: Try to extract from full cookie string
+          if (!accountInfo.zalo_id) {
+            const cookieToSearch = accountInfo.cookie || cookieData;
+            if (cookieToSearch) {
+              let cookieStr = '';
+              if (typeof cookieToSearch === 'object') {
+                cookieStr = JSON.stringify(cookieToSearch);
+              } else {
+                cookieStr = String(cookieToSearch);
+              }
+              
+              console.log('   🔍 Fallback: Searching in full cookie string (length:', cookieStr.length, ')');
+              
+              // Try multiple patterns
+              const patterns = [
+                /"uid":\s*"?(\d{15,})"?/i,
+                /"userId":\s*"?(\d{15,})"?/i,
+                /"zaloId":\s*"?(\d{15,})"?/i,
+                /uid[=:]\s*"?(\d{15,})"?/i,
+                /userId[=:]\s*"?(\d{15,})"?/i,
+                /zaloId[=:]\s*"?(\d{15,})"?/i,
+                /"id":\s*"?(\d{15,})"?/i,
+                /(\d{15,})/g, // Long numeric ID
+              ];
+              
+              for (const pattern of patterns) {
+                const match = cookieStr.match(pattern);
+                if (match && match[1] && match[1].length >= 10) {
+                  accountInfo.zalo_id = match[1];
+                  console.log('   ✅ Zalo ID extracted from cookie string:', accountInfo.zalo_id);
+                  console.log('   Pattern used:', pattern.toString());
+                  break;
+                }
+              }
+            }
+          }
+        } else {
+          console.log('   ⚠️  Cookie data is null or undefined');
+        }
+      } else {
+        console.log('   ⚠️  getCookie method not available');
+      }
+    } catch (error) {
+      console.log('   ⚠️  Could not get cookie:', error.message);
+      if (error.stack) {
+        console.log('   Stack:', error.stack);
+      }
+    }
+    
+    // Try to get zalo_id - PRIORITIZE getOwnId() first!
+    if (!accountInfo.zalo_id) {
+      try {
+        // FIRST: Try getOwnId() - this is the most reliable method
+        if (typeof zalo.getOwnId === 'function') {
+          try {
+            console.log('   🔍 Trying getOwnId() first...');
+            const ownId = await zalo.getOwnId();
+            if (ownId) {
+              accountInfo.zalo_id = String(ownId);
+              console.log('   ✅ Got zalo_id from getOwnId():', accountInfo.zalo_id);
+            }
+          } catch (ownIdError) {
+            console.log('   ⚠️  Could not get own ID:', ownIdError.message);
+          }
+        }
+        
+        // SECOND: Try to get from environment (saved from previous login)
+        if (!accountInfo.zalo_id && process.env.ZALO_USER_ID) {
+          accountInfo.zalo_id = process.env.ZALO_USER_ID;
+          console.log('   ✅ Zalo ID from env:', accountInfo.zalo_id);
+        }
+        
+        // THIRD: Try to extract from cookie
+        if (!accountInfo.zalo_id) {
+          // Try to extract from cookie string if cookie is a string
+          if (accountInfo.cookie && typeof accountInfo.cookie === 'string') {
+            const patterns = [
+              /uid[=:]"?(\d+)"?/i,
+              /userId[=:]"?(\d+)"?/i,
+              /(\d{15,})/g, // Long numeric ID
+            ];
+            
+            for (const pattern of patterns) {
+              const match = accountInfo.cookie.match(pattern);
+              if (match && match[1] && match[1].length >= 10) {
+                accountInfo.zalo_id = match[1];
+                console.log('   ✅ Zalo ID extracted from cookie string:', accountInfo.zalo_id);
+                break;
+              }
+            }
+          }
+          
+          // Try to extract from cookie object if it's an object
+          if (!accountInfo.zalo_id && accountInfo.cookie && typeof accountInfo.cookie === 'object') {
+            try {
+              const cookieStr = JSON.stringify(accountInfo.cookie);
+              const patterns = [
+                /"uid":\s*"?(\d+)"?/i,
+                /"userId":\s*"?(\d+)"?/i,
+                /"zaloId":\s*"?(\d+)"?/i,
+                /(\d{15,})/g,
+              ];
+              
+              for (const pattern of patterns) {
+                const match = cookieStr.match(pattern);
+                if (match && match[1] && match[1].length >= 10) {
+                  accountInfo.zalo_id = match[1];
+                  console.log('   ✅ Zalo ID extracted from cookie object:', accountInfo.zalo_id);
+                  break;
+                }
+              }
+            } catch (e) {
+              console.log('   ⚠️  Could not extract from cookie object:', e.message);
+            }
+          }
+        }
+        
+        // FOURTH: Try to inspect API instance for any user-related properties
+        if (!accountInfo.zalo_id) {
+          try {
+            console.log('   🔍 Inspecting API instance for user info...');
+            const instanceKeys = Object.keys(zalo);
+            console.log('   API instance keys:', instanceKeys.slice(0, 20).join(', '));
+            
+            // Check for common user ID properties
+            if (zalo.uid) {
+              accountInfo.zalo_id = String(zalo.uid);
+              console.log('   ✅ Found zalo_id in zalo.uid:', accountInfo.zalo_id);
+            } else if (zalo.userId) {
+              accountInfo.zalo_id = String(zalo.userId);
+              console.log('   ✅ Found zalo_id in zalo.userId:', accountInfo.zalo_id);
+            } else if (zalo.context) {
+              console.log('   Found context object, checking...');
+              if (zalo.context.uid) {
+                accountInfo.zalo_id = String(zalo.context.uid);
+                console.log('   ✅ Found zalo_id in zalo.context.uid:', accountInfo.zalo_id);
+              }
+            }
+          } catch (inspectError) {
+            console.log('   ⚠️  Could not inspect API instance:', inspectError.message);
+          }
+        }
+        
+        // LAST RESORT: Try to get from getAllFriends - use first friend's userId as temporary zalo_id
+        // This should only be used if all other methods fail
+        if (!accountInfo.zalo_id) {
+          console.log('   ⚠️  Zalo ID not found in cookie, env, or API instance');
+          console.log('   ⚠️  LAST RESORT: Trying to get zalo_id from friends list...');
+          
+          try {
+            if (typeof zalo.getAllFriends === 'function') {
+              const friends = await zalo.getAllFriends();
+              console.log('   Friends count:', friends ? (Array.isArray(friends) ? friends.length : 'not array') : 'null');
+              
+              if (friends && Array.isArray(friends) && friends.length > 0) {
+                const firstFriend = friends[0];
+                const friendUserId = firstFriend.userId || firstFriend.id || firstFriend.uid;
+                
+                if (friendUserId && String(friendUserId).length >= 10) {
+                  // Use this as temporary zalo_id - will need to update later
+                  accountInfo.zalo_id = String(friendUserId);
+                  console.log('   ⚠️  Using friend userId as temporary zalo_id:', accountInfo.zalo_id);
+                  console.log('   ⚠️  This should be updated with actual user ID when available');
+                } else {
+                  console.log('   ⚠️  Cannot determine zalo_id from friends list');
+                  console.log('   First friend sample:', JSON.stringify(firstFriend).substring(0, 200));
+                }
+              }
+            }
+          } catch (friendsError) {
+            console.log('   ⚠️  Could not get friends to infer zalo_id:', friendsError.message);
+          }
+        }
+      } catch (error) {
+        console.log('   ⚠️  Could not get zalo_id:', error.message);
+      }
+    }
+    
+    // PRIORITY: Try fetchAccountInfo FIRST - this gets the logged-in account's info
+    if (typeof zalo.fetchAccountInfo === 'function') {
+      try {
+        console.log('   🔍 PRIORITY: Trying fetchAccountInfo (gets logged-in account info)...');
+        const accountData = await zalo.fetchAccountInfo();
+        console.log('   fetchAccountInfo result:', JSON.stringify(accountData).substring(0, 300));
+        
+        if (accountData) {
+          // fetchAccountInfo returns {profile: {userId, username, displayName, zaloName, avatar, ...}}
+          const profile = accountData.profile || accountData;
+          
+          console.log('   Profile extracted:', {
+            has_profile: !!accountData.profile,
+            profile_keys: Object.keys(profile),
+            userId: profile.userId,
+            displayName: profile.displayName,
+            zaloName: profile.zaloName,
+            avatar: profile.avatar ? profile.avatar.substring(0, 50) + '...' : null,
+          });
+          
+          // ALWAYS update zalo_id from fetchAccountInfo - this is the most reliable source
+          if (profile.userId) {
+            accountInfo.zalo_id = String(profile.userId);
+            console.log('   ✅ Updated zalo_id from fetchAccountInfo:', accountInfo.zalo_id);
+          }
+          
+          // ALWAYS use name/avatar from fetchAccountInfo - this is the logged-in account
+          if (profile.displayName || profile.zaloName || profile.name) {
+            accountInfo.name = profile.displayName || profile.zaloName || profile.name;
+            console.log('   ✅ Got name from fetchAccountInfo (logged-in account):', accountInfo.name);
+          }
+          if (profile.avatar || profile.avatarUrl || profile.image) {
+            accountInfo.avatar_url = profile.avatar || profile.avatarUrl || profile.image;
+            console.log('   ✅ Got avatar_url from fetchAccountInfo (logged-in account):', accountInfo.avatar_url ? accountInfo.avatar_url.substring(0, 50) + '...' : null);
+          }
+          if (profile.phoneNumber) {
+            accountInfo.phone = profile.phoneNumber;
+          }
+        }
+      } catch (error) {
+        console.log('   ⚠️  Could not fetch account info:', error.message);
+      }
+    }
+    
+    // If we still don't have name/avatar, try getUserInfo with the zalo_id
+    // But ONLY if fetchAccountInfo didn't work (it should have worked)
+    if ((!accountInfo.name || !accountInfo.avatar_url) && accountInfo.zalo_id) {
+      try {
+        if (typeof zalo.getUserInfo === 'function') {
+          // Try to get user info with zalo_id
+          const userInfo = await zalo.getUserInfo(accountInfo.zalo_id);
+          console.log('   User info retrieved');
+          
+          if (userInfo && Array.isArray(userInfo) && userInfo.length > 0) {
+            const info = userInfo[0];
+            console.log('   User info keys:', Object.keys(info));
+            console.log('   User info avatar fields:', {
+              avatar: info.avatar,
+              avatarUrl: info.avatarUrl,
+              image: info.image,
+              avt: info.avt,
+              fullAvt: info.fullAvt,
+            });
+            
+            if (!accountInfo.name) {
+              accountInfo.name = info.name || info.userName || info.displayName || accountInfo.name || null;
+            }
+            if (!accountInfo.phone) {
+              accountInfo.phone = info.phone || info.phoneNumber || accountInfo.phone || null;
+            }
+            if (!accountInfo.avatar_url) {
+              accountInfo.avatar_url = info.avatar || info.avatarUrl || info.image || info.avt || info.fullAvt || accountInfo.avatar_url || null;
+            }
+          } else if (userInfo && typeof userInfo === 'object') {
+            console.log('   User info keys:', Object.keys(userInfo));
+            
+            // getUserInfo might return {unchanged_profiles, phonebook_version, changed_profiles}
+            // Check if it's this format
+            if (userInfo.changed_profiles && typeof userInfo.changed_profiles === 'object') {
+              console.log('   ⚠️  getUserInfo returned phonebook format, extracting from changed_profiles...');
+              const changedProfiles = userInfo.changed_profiles;
+              const profileKeys = Object.keys(changedProfiles);
+              
+              // Try to find profile for current zalo_id
+              let profile = null;
+              if (accountInfo.zalo_id && changedProfiles[accountInfo.zalo_id]) {
+                profile = changedProfiles[accountInfo.zalo_id];
+                console.log('   ✅ Found profile for zalo_id in changed_profiles');
+              } else if (profileKeys.length > 0) {
+                // Use first profile
+                profile = changedProfiles[profileKeys[0]];
+                console.log('   ⚠️  Using first profile from changed_profiles:', profileKeys[0]);
+              }
+              
+              if (profile) {
+                console.log('   Profile keys:', Object.keys(profile));
+                console.log('   Profile data:', {
+                  userId: profile.userId,
+                  displayName: profile.displayName,
+                  zaloName: profile.zaloName,
+                  avatar: profile.avatar ? profile.avatar.substring(0, 50) + '...' : null,
+                });
+                
+                if (!accountInfo.name && (profile.displayName || profile.zaloName || profile.name)) {
+                  accountInfo.name = profile.displayName || profile.zaloName || profile.name;
+                  console.log('   ✅ Got name from changed_profiles:', accountInfo.name);
+                }
+                if (!accountInfo.avatar_url && profile.avatar) {
+                  accountInfo.avatar_url = profile.avatar;
+                  console.log('   ✅ Got avatar_url from changed_profiles:', accountInfo.avatar_url.substring(0, 50) + '...');
+                }
+                if (!accountInfo.phone && profile.phoneNumber) {
+                  accountInfo.phone = profile.phoneNumber;
+                }
+                // Update zalo_id if we got a more reliable one
+                if (profile.userId && profile.userId !== accountInfo.zalo_id) {
+                  console.log('   🔄 Updating zalo_id from changed_profiles:', profile.userId);
+                  accountInfo.zalo_id = String(profile.userId);
+                }
+              }
+            } else {
+              // Standard format
+              console.log('   User info avatar fields:', {
+                avatar: userInfo.avatar,
+                avatarUrl: userInfo.avatarUrl,
+                image: userInfo.image,
+                avt: userInfo.avt,
+                fullAvt: userInfo.fullAvt,
+              });
+              
+              if (!accountInfo.name) {
+                accountInfo.name = userInfo.name || userInfo.userName || userInfo.displayName || accountInfo.name || null;
+              }
+              if (!accountInfo.phone) {
+                accountInfo.phone = userInfo.phone || userInfo.phoneNumber || accountInfo.phone || null;
+              }
+              if (!accountInfo.avatar_url) {
+                accountInfo.avatar_url = userInfo.avatar || userInfo.avatarUrl || userInfo.image || userInfo.avt || userInfo.fullAvt || accountInfo.avatar_url || null;
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.log('   ⚠️  Could not get user info:', error.message);
+      }
+    }
+    
+    // Try getAvatarList if available and still no avatar
+    if (!accountInfo.avatar_url && typeof zalo.getAvatarList === 'function') {
+      try {
+        console.log('   🔍 Trying getAvatarList...');
+        const avatarList = await zalo.getAvatarList();
+        console.log('   getAvatarList result:', JSON.stringify(avatarList).substring(0, 200));
+        
+        if (avatarList && Array.isArray(avatarList) && avatarList.length > 0) {
+          // Use first avatar from list
+          const firstAvatar = avatarList[0];
+          accountInfo.avatar_url = firstAvatar.url || firstAvatar.avatar || firstAvatar.avatarUrl || firstAvatar.image || null;
+        } else if (avatarList && typeof avatarList === 'object') {
+          accountInfo.avatar_url = avatarList.url || avatarList.avatar || avatarList.avatarUrl || avatarList.image || null;
+        }
+      } catch (error) {
+        console.log('   ⚠️  Could not get avatar list:', error.message);
+      }
+    }
+    
+    console.log('✅ Account info retrieved:', {
+      has_zalo_id: !!accountInfo.zalo_id,
+      has_name: !!accountInfo.name,
+      has_avatar_url: !!accountInfo.avatar_url,
+      has_cookie: !!accountInfo.cookie,
+      zalo_id: accountInfo.zalo_id,
+      name: accountInfo.name,
+      avatar_url: accountInfo.avatar_url ? accountInfo.avatar_url.substring(0, 50) + '...' : null,
+    });
+    
+    res.json({
+      success: true,
+      data: accountInfo,
+    });
+  } catch (error) {
+    console.error('❌ Get account info error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to get account info',
+    });
+  }
+});
+
+/**
+ * POST /api/auth/set-credentials
+ * Set credentials (cookie, imei, userAgent) and initialize Zalo client
+ * This is called by Laravel when an account needs to be activated
+ */
+router.post('/set-credentials', verifyApiKey, async (req, res) => {
+  try {
+    console.log('🔐 [POST /api/auth/set-credentials] Setting credentials...');
+    console.log('   Has cookie:', !!req.body.cookie);
+    console.log('   Has imei:', !!req.body.imei);
+    console.log('   Has user_agent:', !!req.body.user_agent);
+    
+    const { cookie, imei, user_agent, zalo_id } = req.body;
+    
+    if (!cookie) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cookie is required',
+      });
+    }
+    
+    // Set environment variables
+    process.env.ZALO_COOKIE = typeof cookie === 'string' ? cookie : JSON.stringify(cookie);
+    if (imei) {
+      process.env.ZALO_IMEI = imei;
+    }
+    if (user_agent) {
+      process.env.ZALO_USER_AGENT = user_agent;
+    }
+    if (zalo_id) {
+      process.env.ZALO_USER_ID = zalo_id;
+    }
+    
+    console.log('✅ Environment variables set');
+    console.log('   ZALO_COOKIE length:', process.env.ZALO_COOKIE ? process.env.ZALO_COOKIE.length : 0);
+    console.log('   ZALO_IMEI:', process.env.ZALO_IMEI ? 'Set' : 'Not set');
+    console.log('   ZALO_USER_AGENT:', process.env.ZALO_USER_AGENT ? 'Set' : 'Not set');
+    console.log('   ZALO_USER_ID:', process.env.ZALO_USER_ID || 'Not set');
+    
+    // Reinitialize Zalo client with new credentials
+    // Reset state first
+    const { getZaloClient, isZaloReady: checkReady } = require('../services/zaloClient');
+    const { stopKeepAlive, stopWebSocketListener } = require('../services/zaloClient');
+    
+    // Stop existing connections
+    stopKeepAlive();
+    stopWebSocketListener();
+    
+    // Try to get and set ZALO_USER_ID if not already set
+    if (!process.env.ZALO_USER_ID && zalo_id) {
+      process.env.ZALO_USER_ID = zalo_id;
+      console.log('   ✅ ZALO_USER_ID set from request:', process.env.ZALO_USER_ID);
+    }
+    
+    // Initialize with new credentials (will use process.env.ZALO_COOKIE)
+    const { initializeZalo } = require('../services/zaloClient');
+    await initializeZalo(null, false); // No QR callback, use cookie from env
+    
+    // Check if ready
+    const { isZaloReady } = require('../services/zaloClient');
+    const ready = isZaloReady();
+    
+    console.log('📊 After reinitialize:');
+    console.log('   isReady:', ready);
+    
+    res.json({
+      success: true,
+      message: 'Credentials set and Zalo client initialized',
+      isReady: ready,
+    });
+  } catch (error) {
+    console.error('❌ Set credentials error:', error);
+    console.error('   Error details:', {
+      message: error.message,
+      name: error.name,
+      stack: error.stack,
+    });
+    
+    // Check if it's a login/authentication error
+    const isLoginError = error.message && (
+      error.message.includes('Đăng nhập thất bại') ||
+      error.message.includes('thất bại') ||
+      error.message.includes('login failed') ||
+      error.message.includes('failed') ||
+      error.message.includes('expired') ||
+      error.message.includes('invalid')
+    );
+    
+    res.status(500).json({
+      success: false,
+      message: isLoginError 
+        ? 'Đăng nhập thất bại. Cookie đã hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại bằng QR code.'
+        : (error.message || 'Failed to set credentials'),
+      isLoginError: isLoginError,
+      error: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+    });
+  }
+});
+
+/**
+ * POST /api/auth/reinitialize
+ * Reinitialize Zalo with new credentials
+ */
+router.post('/reinitialize', verifyApiKey, async (req, res) => {
+  try {
+    let qrCodeDataUrl = null;
+    
+    await reinitializeZalo((qrData) => {
+      QRCode.toDataURL(qrData, { width: 300, margin: 2 }, (err, url) => {
+        if (!err) {
+          qrCodeDataUrl = url;
+        }
+      });
+    });
+    
+    res.json({
+      success: true,
+      message: 'Zalo reinitialized successfully',
+      qrCode: qrCodeDataUrl,
+    });
+  } catch (error) {
+    console.error('Reinitialize error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to reinitialize Zalo',
+    });
+  }
+});
+
+module.exports = router;

@@ -1,0 +1,1197 @@
+const express = require('express');
+const router = express.Router();
+const { verifyApiKey } = require('../middleware/auth');
+const { getZaloClient, healthMonitors } = require('../services/zaloClient');
+const { ThreadType } = require('zalo-api-final');
+const https = require('https');
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const { promisify } = require('util');
+const writeFile = promisify(fs.writeFile);
+const unlink = promisify(fs.unlink);
+
+/**
+ * Helper function to record outgoing message activity for health monitoring
+ */
+function recordOutgoingMessage(accountId) {
+  const healthMonitor = healthMonitors.get(accountId);
+  if (healthMonitor) {
+    healthMonitor.recordOutgoingMessage();
+  }
+}
+
+/**
+ * POST /api/message/send
+ * Send text message to user or group
+ * Body: { to: "phone_or_group_id", message: "text", type: "user|group" }
+ */
+router.post('/send', verifyApiKey, async (req, res) => {
+  try {
+    console.log('📥 [zalo-service] POST /api/message/send received');
+    console.log('📥 [zalo-service] Request body:', {
+      to: req.body.to,
+      type: req.body.type,
+      messageLength: req.body.message?.length || 0,
+      hasMessage: !!req.body.message,
+    });
+    
+    const { to, message, type = 'user' } = req.body;
+
+    // MULTI-SESSION: Get accountId from header if provided
+    let accountId = req.headers['x-account-id'];
+    if (accountId) {
+      accountId = parseInt(accountId);
+    }
+
+    if (!to || !message) {
+      console.error('❌ [zalo-service] Missing required fields:', {
+        hasTo: !!to,
+        hasMessage: !!message,
+      });
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: to, message'
+      });
+    }
+
+    let zalo;
+    try {
+      // MULTI-SESSION: Pass accountId to get correct session
+      zalo = getZaloClient(accountId);
+      console.log('✅ [zalo-service] Zalo client retrieved');
+      console.log('   Client status:', {
+        hasClient: !!zalo,
+        hasSendMessage: typeof zalo?.sendMessage === 'function',
+        hasListener: !!zalo?.listener,
+        listenerStarted: typeof zalo?.listener?.start === 'function',
+      });
+    } catch (error) {
+      console.error('❌ [zalo-service] Failed to get Zalo client:', error.message);
+      return res.status(503).json({
+        success: false,
+        message: 'Zalo client not initialized. Please login first.'
+      });
+    }
+    
+    // API theo zalo-api-final
+    // sendMessage signature: sendMessage(message: string | MessageContent, threadId: string, type?: ThreadType)
+    // threadId is the userId or groupId (same as 'to' parameter)
+    const threadId = to;
+    const threadType = type === 'group' ? ThreadType.Group : ThreadType.User;
+    
+    console.log('📤 [zalo-service] Sending message with params:', {
+      type,
+      to,
+      threadId,
+      threadType: threadType === ThreadType.Group ? 'Group' : 'User',
+      messageLength: message.length,
+    });
+    
+    // Call sendMessage with correct signature: sendMessage(message, threadId, type)
+    console.log('📤 [zalo-service] Calling zalo.sendMessage with:', {
+      messageType: typeof message,
+      messageLength: typeof message === 'string' ? message.length : JSON.stringify(message).length,
+      threadId,
+      threadType: threadType === ThreadType.Group ? 'Group' : 'User',
+    });
+    
+    const result = await zalo.sendMessage(message, threadId, threadType);
+
+    // Record outgoing message for health monitoring
+    recordOutgoingMessage(accountId);
+
+    // Extract message ID from result - zalo-api-final returns { message: { msgId, cliMsgId, ... }, attachment: ... }
+    const msgId = result?.message?.msgId?.toString() || result?.messageId?.toString() || result?.id?.toString() || null;
+    const cliMsgId = result?.message?.cliMsgId?.toString() || null;
+    const globalMsgId = result?.message?.globalMsgId?.toString() || msgId;
+
+    console.log('✅ [zalo-service] Message sent successfully:', {
+      to,
+      type,
+      hasResult: !!result,
+      resultKeys: result ? Object.keys(result) : [],
+      resultMessageKeys: result?.message ? Object.keys(result.message) : [],
+      msgId: msgId,
+      cliMsgId: cliMsgId,
+      globalMsgId: globalMsgId,
+      resultMessageId: msgId || 'N/A',
+    });
+    
+    res.json({
+      success: true,
+      message: 'Message sent successfully',
+      data: {
+        message_id: msgId || Date.now().toString(), // Use msgId as primary message_id
+        cli_msg_id: cliMsgId, // Also include cliMsgId
+        global_msg_id: globalMsgId,
+        all_message_ids: {
+          msgId: msgId,
+          cliMsgId: cliMsgId,
+          globalMsgId: globalMsgId,
+        },
+        ...result
+      }
+    });
+  } catch (error) {
+    console.error('❌ [zalo-service] Send message error:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+    });
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to send message',
+      error: error.stack
+    });
+  }
+});
+
+/**
+ * POST /api/message/send-bulk
+ * Send message to multiple recipients
+ * Body: { recipients: [{to, type}], message }
+ */
+router.post('/send-bulk', verifyApiKey, async (req, res) => {
+  try {
+    const { recipients, message } = req.body;
+    
+    if (!recipients || !Array.isArray(recipients) || !message) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: recipients (array), message'
+      });
+    }
+    
+    const zalo = getZaloClient();
+    const results = [];
+    const errors = [];
+    
+    for (const recipient of recipients) {
+      try {
+        const threadId = recipient.to;
+        const threadType = recipient.type === 'group' ? ThreadType.Group : ThreadType.User;
+        
+        const result = await zalo.sendMessage(message, threadId, threadType);
+        
+        results.push({
+          to: recipient.to,
+          success: true,
+          data: result
+        });
+      } catch (error) {
+        errors.push({
+          to: recipient.to,
+          success: false,
+          error: error.message
+        });
+      }
+      
+      // Small delay to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
+    res.json({
+      success: true,
+      message: `Sent ${results.length}/${recipients.length} messages`,
+      results,
+      errors
+    });
+  } catch (error) {
+    console.error('Bulk send error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to send bulk messages'
+    });
+  }
+});
+
+/**
+ * POST /api/message/send-image
+ * Send image message
+ * Body: { to, imageUrl, type }
+ */
+router.post('/send-image', verifyApiKey, async (req, res) => {
+  let tempFilePath = null;
+  let isAbsolutePath = false; // Define in outer scope for error handler
+
+  try {
+    const { to, imageUrl, imagePath, type = 'user' } = req.body;
+
+    // MULTI-SESSION: Get accountId from header if provided
+    let accountId = req.headers['x-account-id'];
+    if (accountId) {
+      accountId = parseInt(accountId);
+    }
+    
+    // Prefer imagePath over imageUrl (no need to download)
+    const imageSource = imagePath || imageUrl;
+    
+    // Check if it's an absolute file path (not a URL)
+    // Windows: starts with C:\, D:\, etc.
+    // Linux/Mac: starts with /
+    if (imagePath && typeof imagePath === 'string') {
+      const isWindowsPath = /^[A-Za-z]:\\/.test(imagePath); // C:\, D:\, etc.
+      const isUnixPath = imagePath.startsWith('/'); // /usr/, /home/, etc.
+      
+      if (isWindowsPath || isUnixPath) {
+        // It's a file path, check if it exists
+        isAbsolutePath = fs.existsSync(imagePath);
+      } else {
+        // It's probably a URL
+        isAbsolutePath = false;
+      }
+    }
+    
+    console.log('📥 [zalo-service] POST /api/message/send-image received', {
+      to,
+      hasImageUrl: !!imageUrl,
+      hasImagePath: !!imagePath,
+      imagePathValue: imagePath ? imagePath.substring(0, 100) : null,
+      isAbsolutePath,
+      imageSource: imageSource?.substring(0, 100) + '...',
+      type,
+    });
+    
+    if (!to || !imageSource) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: to, imageUrl or imagePath'
+      });
+    }
+
+    let zalo;
+    try {
+      // MULTI-SESSION: Pass accountId to get correct session
+      zalo = getZaloClient(accountId);
+    } catch (error) {
+      return res.status(503).json({
+        success: false,
+        message: 'Zalo client not initialized. Please login first.'
+      });
+    }
+
+    // zalo-api-final requires a local file path
+    // If imagePath is provided (absolute path), use it directly (no download needed)
+    // If imageUrl is provided, download it to a temporary file first
+    
+    let finalImagePath;
+    
+    if (isAbsolutePath) {
+      // Use absolute path directly - MUCH FASTER (no download needed)
+      finalImagePath = imagePath;
+      console.log('✅ [zalo-service] Using absolute path directly (no download):', finalImagePath);
+    } else {
+      // Download from URL to temporary file
+      console.log('📥 [zalo-service] Downloading image from URL:', imageSource);
+      
+      const tempDir = path.join(__dirname, '../temp');
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+      
+      // IMPORTANT: Keep original extension (.jpg, .png) so Zalo recognizes it as image
+      // Extract extension from URL
+      let ext = '.jpg'; // Default extension
+      try {
+        const urlPath = new URL(imageSource).pathname;
+        const extractedExt = path.extname(urlPath);
+        if (extractedExt && ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.avif'].includes(extractedExt.toLowerCase())) {
+          ext = extractedExt;
+        }
+      } catch (e) {
+        // If URL parsing fails, use .jpg as default
+        console.warn('⚠️  Failed to extract extension from URL, using .jpg');
+      }
+      
+      const fileName = `image_${Date.now()}_${Math.random().toString(36).substring(7)}${ext}`;
+      tempFilePath = path.join(tempDir, fileName);
+      
+      console.log('📝 [zalo-service] Temp file will be saved as:', {
+        fileName,
+        extension: ext,
+        fullPath: tempFilePath.substring(0, 80) + '...',
+      });
+      
+      // Download image from URL
+      await new Promise((resolve, reject) => {
+        const protocol = imageSource.startsWith('https') ? https : http;
+        const file = fs.createWriteStream(tempFilePath);
+        
+        protocol.get(imageSource, (response) => {
+          if (response.statusCode !== 200) {
+            file.close();
+            fs.unlinkSync(tempFilePath);
+            reject(new Error(`Failed to download image: ${response.statusCode}`));
+            return;
+          }
+          
+          response.pipe(file);
+          file.on('finish', () => {
+            file.close();
+            resolve();
+          });
+        }).on('error', (err) => {
+          file.close();
+          if (fs.existsSync(tempFilePath)) {
+            fs.unlinkSync(tempFilePath);
+          }
+          reject(err);
+        });
+      });
+      
+      finalImagePath = tempFilePath;
+      console.log('✅ [zalo-service] Image downloaded to:', finalImagePath);
+    }
+    
+    // For image, zalo-api-final expects path to be passed directly as the message parameter
+    // NOT as an object with attachments array
+    const threadId = to;
+    const threadType = type === 'group' ? ThreadType.Group : ThreadType.User;
+    
+    console.log('📤 [zalo-service] Sending image with:', {
+      threadId,
+      threadType: threadType === ThreadType.Group ? 'Group' : 'User',
+      imageSource: imageSource?.substring(0, 50) + '...',
+      finalImagePath: finalImagePath?.substring(0, 50) + '...',
+      isAbsolutePath,
+      needsCleanup: !isAbsolutePath,
+    });
+    
+    // SIMPLIFIED APPROACH: Let zalo-api-final handle upload automatically
+    // When attachments is a file path string, sendMessage will:
+    // 1. Auto-upload to Zalo CDN
+    // 2. Send message with photoId
+    // 3. Return CDN URL via WebSocket
+    console.log('📤 [zalo-service] Sending message (zalo-api-final will auto-upload)...');
+    
+    const messageContent = {
+      msg: '', // Empty text for image-only message
+      attachments: [finalImagePath] // Pass file path, zalo-api-final will upload
+    };
+    
+    console.log('📤 [zalo-service] Message content:', {
+      hasMsg: true,
+      hasAttachments: true,
+      attachmentIsFilePath: typeof finalImagePath === 'string',
+      attachmentPath: finalImagePath?.substring(0, 80) + '...',
+    });
+    
+    const result = await zalo.sendMessage(messageContent, threadId, threadType);
+
+    // Record outgoing message for health monitoring
+    recordOutgoingMessage(accountId);
+
+    // Extract CDN URL from result.attachment (auto-uploaded by zalo-api-final)
+    let uploadedCdnUrl = null;
+    let photoId = null;
+    
+    if (result?.attachment && Array.isArray(result.attachment) && result.attachment.length > 0) {
+      // zalo-api-final returns upload info in result.attachment
+      const uploaded = result.attachment[0];
+      uploadedCdnUrl = uploaded.normalUrl || uploaded.hdUrl || uploaded.url || null;
+      photoId = uploaded.photoId || null;
+      
+      console.log('📎 [zalo-service] Extracted from result.attachment:', {
+        hasAttachment: true,
+        attachmentKeys: Object.keys(uploaded),
+        cdnUrl: uploadedCdnUrl,
+        photoId: photoId,
+      });
+    } else {
+      console.warn('⚠️  [zalo-service] No attachment in result (will rely on WebSocket)');
+    }
+    
+    // Extract message ID from result
+    const msgId = result?.message?.msgId?.toString() || result?.messageId?.toString() || result?.id?.toString() || null;
+    const cliMsgId = result?.message?.cliMsgId?.toString() || null;
+    const globalMsgId = result?.message?.globalMsgId?.toString() || msgId;
+    
+    console.log('✅ [zalo-service] Image sent successfully:', {
+      hasResult: !!result,
+      hasResultMessage: !!result?.message,
+      hasResultAttachment: !!result?.attachment,
+      attachmentCount: Array.isArray(result?.attachment) ? result.attachment.length : 0,
+      msgId: msgId,
+      cliMsgId: cliMsgId,
+      globalMsgId: globalMsgId,
+      uploadedCdnUrl: uploadedCdnUrl || 'WILL GET FROM WEBSOCKET',
+      photoId: photoId || 'WILL GET FROM WEBSOCKET',
+    });
+    
+    // Store image URL mapping in global cache for WebSocket listener
+    // Use uploaded CDN URL from uploadAttachment
+    const finalImageUrl = uploadedCdnUrl || imageSource;
+    
+    if (msgId && uploadedCdnUrl) {
+      global.imageSendCache = global.imageSendCache || new Map();
+      global.imageSendCache.set(msgId, {
+        imageUrl: finalImageUrl,
+        zaloCdnUrl: uploadedCdnUrl,
+        localUrl: imageSource,
+        timestamp: Date.now(),
+      });
+      console.log('📝 [zalo-service] Stored image URL mapping:', {
+        msgId,
+        zaloCdnUrl: uploadedCdnUrl ? uploadedCdnUrl.substring(0, 50) + '...' : null,
+        localUrl: imageSource ? imageSource.substring(0, 50) + '...' : null,
+        finalImageUrl: finalImageUrl ? finalImageUrl.substring(0, 50) + '...' : null,
+        cacheSize: global.imageSendCache.size,
+      });
+      
+      // Auto-cleanup old entries (> 5 minutes)
+      for (const [key, value] of global.imageSendCache.entries()) {
+        if (Date.now() - value.timestamp > 5 * 60 * 1000) {
+          global.imageSendCache.delete(key);
+        }
+      }
+    }
+    
+    // Clean up temporary file after sending (only if we downloaded it)
+    if (!isAbsolutePath && tempFilePath && fs.existsSync(tempFilePath)) {
+      try {
+        await unlink(tempFilePath);
+        console.log('🧹 [zalo-service] Temporary image file deleted:', tempFilePath);
+      } catch (cleanupError) {
+        console.warn('⚠️  [zalo-service] Failed to delete temp file:', cleanupError.message);
+      }
+      tempFilePath = null;
+    } else if (isAbsolutePath) {
+      console.log('✅ [zalo-service] No cleanup needed - used absolute path directly');
+    }
+    
+    res.json({
+      success: true,
+      message: 'Image sent successfully',
+      data: {
+        message_id: msgId || Date.now().toString(), // Use msgId as primary message_id
+        cli_msg_id: cliMsgId, // Also include cliMsgId
+        global_msg_id: globalMsgId,
+        all_message_ids: {
+          msgId: msgId,
+          cliMsgId: cliMsgId,
+          globalMsgId: globalMsgId,
+        },
+        // IMPORTANT: Return Zalo CDN URL from uploadAttachment (immediate, no need to wait for WebSocket)
+        zalo_cdn_url: uploadedCdnUrl,
+        local_url: imageSource,
+        // Use Zalo CDN URL as media_url for database storage
+        media_url: uploadedCdnUrl || imageSource,
+        photo_id: photoId, // Zalo photo ID for reference
+        ...result // Include full result for compatibility
+      }
+    });
+  } catch (error) {
+    console.error('❌ [zalo-service] Send image error:', {
+      message: error.message,
+      stack: error.stack,
+      error: error,
+    });
+    
+    // Clean up temporary file on error (only if we downloaded it)
+    if (!isAbsolutePath && tempFilePath && fs.existsSync(tempFilePath)) {
+      try {
+        await unlink(tempFilePath);
+        console.log('🧹 [zalo-service] Temporary image file deleted after error:', tempFilePath);
+      } catch (cleanupError) {
+        console.warn('⚠️  [zalo-service] Failed to delete temp file after error:', cleanupError.message);
+      }
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to send image'
+    });
+  }
+});
+
+/**
+ * POST /api/message/send-file
+ * Send file (document) message
+ * Body: { to, fileUrl or filePath, fileName, type }
+ */
+router.post('/send-file', verifyApiKey, async (req, res) => {
+  let tempFilePath = null;
+  let isAbsolutePath = false;
+  
+  try {
+    const { to, fileUrl, filePath, fileName, type = 'user' } = req.body;
+    
+    // Prefer filePath over fileUrl (no need to download)
+    const fileSource = filePath || fileUrl;
+    
+    // Check if it's an absolute file path
+    if (filePath && typeof filePath === 'string') {
+      const isWindowsPath = /^[A-Za-z]:\\/.test(filePath);
+      const isUnixPath = filePath.startsWith('/');
+      
+      if (isWindowsPath || isUnixPath) {
+        isAbsolutePath = fs.existsSync(filePath);
+      }
+    }
+    
+    console.log('📥 [zalo-service] POST /api/message/send-file received', {
+      to,
+      hasFileUrl: !!fileUrl,
+      hasFilePath: !!filePath,
+      filePathValue: filePath ? filePath.substring(0, 100) : null,
+      isAbsolutePath,
+      fileName,
+      type,
+    });
+    
+    if (!to || !fileSource || !fileName) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: to, (fileUrl or filePath), fileName'
+      });
+    }
+    
+    let zalo;
+    try {
+      zalo = getZaloClient();
+    } catch (error) {
+      return res.status(503).json({
+        success: false,
+        message: 'Zalo client not initialized. Please login first.'
+      });
+    }
+    
+    // Get final file path (use absolute path or download from URL)
+    let finalFilePath;
+    
+    if (isAbsolutePath) {
+      // Use absolute path directly
+      finalFilePath = filePath;
+      console.log('✅ [zalo-service] Using absolute file path:', finalFilePath);
+    } else {
+      // Download from URL to temporary file
+      console.log('📥 [zalo-service] Downloading file from URL:', fileSource);
+      
+      const tempDir = path.join(__dirname, '../temp');
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+      
+      // Extract extension from fileName
+      let ext = path.extname(fileName) || '.dat'; // Default to .dat if no extension
+      const fileNameWithoutExt = path.basename(fileName, ext);
+      const tempFileName = `file_${Date.now()}_${fileNameWithoutExt}${ext}`;
+      tempFilePath = path.join(tempDir, tempFileName);
+      
+      console.log('📝 [zalo-service] Temp file will be saved as:', {
+        tempFileName,
+        extension: ext,
+        fullPath: tempFilePath.substring(0, 80) + '...',
+      });
+      
+      // Download file from URL
+      await new Promise((resolve, reject) => {
+        const protocol = fileSource.startsWith('https') ? https : http;
+        const file = fs.createWriteStream(tempFilePath);
+        
+        protocol.get(fileSource, (response) => {
+          if (response.statusCode !== 200) {
+            file.close();
+            fs.unlinkSync(tempFilePath);
+            reject(new Error(`Failed to download file: ${response.statusCode}`));
+            return;
+          }
+          
+          response.pipe(file);
+          file.on('finish', () => {
+            file.close();
+            resolve();
+          });
+        }).on('error', (err) => {
+          file.close();
+          if (fs.existsSync(tempFilePath)) {
+            fs.unlinkSync(tempFilePath);
+          }
+          reject(err);
+        });
+      });
+      
+      finalFilePath = tempFilePath;
+      console.log('✅ [zalo-service] File downloaded to:', finalFilePath);
+    }
+    
+    // Send file with zalo-api-final
+    const threadId = to;
+    const threadType = type === 'group' ? ThreadType.Group : ThreadType.User;
+    
+    console.log('📤 [zalo-service] Sending file with:', {
+      threadId,
+      threadType: threadType === ThreadType.Group ? 'Group' : 'User',
+      fileName,
+      finalFilePath: finalFilePath?.substring(0, 50) + '...',
+      isAbsolutePath,
+      needsCleanup: !isAbsolutePath,
+    });
+    
+    // Send ONLY file attachment (NO text message to avoid duplicate)
+    // zalo-api-final will automatically display file name in Zalo
+    const messageContent = {
+      msg: '', // Empty text (file name will be auto-displayed by Zalo)
+      attachments: [finalFilePath] // Pass file path, zalo-api-final will upload
+    };
+    
+    console.log('📤 [zalo-service] Sending file message (attachment only)...');
+    const result = await zalo.sendMessage(messageContent, threadId, threadType);
+    
+    // Extract message ID from result
+    const msgId = result?.message?.msgId?.toString() || result?.messageId?.toString() || result?.id?.toString() || null;
+    const cliMsgId = result?.message?.cliMsgId?.toString() || null;
+    const globalMsgId = result?.message?.globalMsgId?.toString() || msgId;
+    
+    console.log('✅ [zalo-service] File sent successfully:', {
+      fileName,
+      msgId,
+      cliMsgId,
+      globalMsgId,
+    });
+    
+    // Clean up temporary file after sending (only if we downloaded it)
+    if (!isAbsolutePath && tempFilePath) {
+      try {
+        await unlink(tempFilePath);
+        console.log('🧹 [zalo-service] Temporary file deleted:', tempFilePath);
+      } catch (cleanupError) {
+        console.warn('⚠️  [zalo-service] Failed to delete temp file:', cleanupError.message);
+      }
+    }
+    
+    res.json({
+      success: true,
+      data: {
+        message_id: msgId,
+        cli_msg_id: cliMsgId,
+        global_msg_id: globalMsgId,
+        file_name: fileName,
+        ...result
+      }
+    });
+  } catch (error) {
+    console.error('❌ [zalo-service] Send file error:', {
+      message: error.message,
+      stack: error.stack,
+    });
+    
+    // Clean up temporary file on error
+    if (!isAbsolutePath && tempFilePath && fs.existsSync(tempFilePath)) {
+      try {
+        await unlink(tempFilePath);
+        console.log('🧹 [zalo-service] Temporary file deleted after error:', tempFilePath);
+      } catch (cleanupError) {
+        console.warn('⚠️  [zalo-service] Failed to delete temp file after error:', cleanupError.message);
+      }
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to send file'
+    });
+  }
+});
+
+/**
+ * POST /api/message/reply
+ * Reply to a message with quote
+ * Body: { to, message, type, quote }
+ */
+router.post('/reply', verifyApiKey, async (req, res) => {
+  try {
+    console.log('📥 [zalo-service] POST /api/message/reply received');
+    
+    const { to, message, type = 'user', quote } = req.body;
+    
+    if (!to || !message) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: to, message'
+      });
+    }
+    
+    let zalo;
+    try {
+      zalo = getZaloClient();
+    } catch (error) {
+      return res.status(503).json({
+        success: false,
+        message: 'Zalo client not initialized. Please login first.'
+      });
+    }
+    
+    const threadId = to;
+    const threadType = type === 'group' ? ThreadType.Group : ThreadType.User;
+    
+    // Prepare message content with quote
+    // Handle both formats: message as string or message as object { msg: ..., quote: ... }
+    let messageContent;
+    let extractedQuote = quote;
+    
+    if (typeof message === 'string') {
+      // Simple string message
+      messageContent = {
+        msg: message,
+      };
+    } else if (typeof message === 'object' && message !== null) {
+      // Message object with msg and possibly quote
+      messageContent = {
+        msg: message.msg || message.message || '',
+      };
+      // Quote can be in message.quote or in separate quote parameter
+      extractedQuote = message.quote || quote;
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid message format. Expected string or object with msg property.'
+      });
+    }
+    
+    if (extractedQuote) {
+      // Ensure quote has required fields for zalo-api-final
+      // Quote format according to zalo-api-final: { cliMsgId, globalMsgId, msg, cliMsgType, ts, ownerId, ttl, propertyExt? }
+      // All fields are required except propertyExt
+      
+      // Extract and validate required fields
+      const cliMsgId = extractedQuote.cliMsgId || extractedQuote.cli_msg_id || '';
+      const globalMsgId = extractedQuote.msgId || extractedQuote.globalMsgId || extractedQuote.message_id || '';
+      const msg = extractedQuote.content || extractedQuote.msg || '';
+      const cliMsgType = extractedQuote.msgType || extractedQuote.cliMsgType || 'text';
+      
+      // ts must be timestamp in milliseconds (number)
+      let ts = extractedQuote.ts || extractedQuote.timestamp || Date.now();
+      if (typeof ts === 'string') {
+        ts = parseInt(ts, 10);
+      }
+      if (isNaN(ts)) {
+        ts = Date.now();
+      }
+      
+      // ownerId must be a valid string (user ID)
+      const ownerId = extractedQuote.uidFrom || extractedQuote.ownerId || '';
+      
+      // ttl must be a number
+      let ttl = extractedQuote.ttl || 0;
+      if (typeof ttl === 'string') {
+        ttl = parseInt(ttl, 10);
+      }
+      if (isNaN(ttl)) {
+        ttl = 0;
+      }
+      
+      // Validate required fields
+      if (!cliMsgId && !globalMsgId) {
+        console.warn('⚠️  [zalo-service] Quote data missing required fields (cliMsgId or globalMsgId), skipping quote');
+      } else if (!msg) {
+        console.warn('⚠️  [zalo-service] Quote data missing msg field, skipping quote');
+      } else if (!ownerId) {
+        console.warn('⚠️  [zalo-service] Quote data missing ownerId field, skipping quote');
+      } else {
+        // Build formatted quote according to zalo-api-final format
+        // Format: { content, msgType, propertyExt?, uidFrom, msgId, cliMsgId, ts, ttl }
+        // Note: zalo-api-final uses different field names than our internal format
+        const formattedQuote = {
+          content: msg, // Use 'content' not 'msg'
+          msgType: cliMsgType, // Use 'msgType' not 'cliMsgType'
+          uidFrom: ownerId, // Use 'uidFrom' not 'ownerId'
+          msgId: globalMsgId, // Use 'msgId' not 'globalMsgId'
+          cliMsgId: cliMsgId,
+          ts: ts,
+          ttl: ttl,
+        };
+        
+        // Add optional propertyExt if provided
+        if (extractedQuote.propertyExt !== undefined) {
+          formattedQuote.propertyExt = extractedQuote.propertyExt;
+        }
+        
+        messageContent.quote = formattedQuote;
+        console.log('📎 [zalo-service] Replying with quote (zalo-api-final format):', {
+          quoteContent: formattedQuote.content?.substring(0, 50) || '',
+          quoteMsgType: formattedQuote.msgType,
+          quoteUidFrom: formattedQuote.uidFrom,
+          quoteMsgId: formattedQuote.msgId,
+          quoteCliMsgId: formattedQuote.cliMsgId,
+          quoteTs: formattedQuote.ts,
+        });
+      }
+    }
+    
+    console.log('📤 [zalo-service] Sending reply message:', {
+      type,
+      to,
+      threadId,
+      threadType: threadType === ThreadType.Group ? 'Group' : 'User',
+      messageLength: typeof message === 'string' ? message.length : (message.msg?.length || 0),
+      hasQuote: !!extractedQuote,
+    });
+    
+    const result = await zalo.sendMessage(messageContent, threadId, threadType);
+    
+    console.log('✅ [zalo-service] Reply message sent successfully');
+    
+    res.json({
+      success: true,
+      message: 'Reply sent successfully',
+      data: {
+        message_id: result?.message?.msgId || result?.message?.id || Date.now().toString(),
+        ...result
+      }
+    });
+  } catch (error) {
+    console.error('❌ [zalo-service] Reply message error:', {
+      message: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to send reply',
+      error: error.stack
+    });
+  }
+});
+
+/**
+ * POST /api/message/send-sticker
+ * Send sticker message
+ * Body: { to, sticker: {id, cateId, type}, type }
+ */
+router.post('/send-sticker', verifyApiKey, async (req, res) => {
+  try {
+    console.log('📥 [zalo-service] POST /api/message/send-sticker received');
+    const { to, sticker, type = 'user' } = req.body;
+
+    if (!to || !sticker) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: to, sticker'
+      });
+    }
+
+    // Validate sticker object
+    if (!sticker.id || !sticker.cateId || sticker.type === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid sticker object. Required fields: id, cateId, type'
+      });
+    }
+
+    let zalo;
+    try {
+      // MULTI-SESSION: Get accountId from header if provided
+      let accountId = req.headers['x-account-id'];
+      if (accountId) {
+        accountId = parseInt(accountId);
+      }
+      zalo = getZaloClient(accountId);
+    } catch (error) {
+      return res.status(503).json({
+        success: false,
+        message: 'Zalo client not initialized. Please login first.'
+      });
+    }
+
+    const threadId = to;
+    const threadType = type === 'group' ? ThreadType.Group : ThreadType.User;
+
+    console.log('🎨 [zalo-service] Sending sticker with:', {
+      threadId,
+      threadType: threadType === ThreadType.Group ? 'Group' : 'User',
+      stickerId: sticker.id,
+      cateId: sticker.cateId,
+      stickerType: sticker.type,
+    });
+
+    // Call sendSticker API
+    const result = await zalo.sendSticker(sticker, threadId, threadType);
+
+    // Extract message ID from result
+    const msgId = result?.data?.msgId?.toString() || result?.msgId?.toString() || Date.now().toString();
+    const cliMsgId = result?.data?.cliMsgId?.toString() || result?.cliMsgId?.toString() || null;
+
+    console.log('✅ [zalo-service] Sticker sent successfully:', {
+      msgId,
+      cliMsgId,
+      hasResult: !!result,
+      resultKeys: result ? Object.keys(result) : [],
+    });
+
+    res.json({
+      success: true,
+      message: 'Sticker sent successfully',
+      data: {
+        message_id: msgId,
+        cli_msg_id: cliMsgId,
+        sticker: sticker,
+        ...result
+      }
+    });
+  } catch (error) {
+    console.error('❌ [zalo-service] Send sticker error:', {
+      message: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to send sticker'
+    });
+  }
+});
+
+/**
+ * GET /api/message/stickers
+ * Get available stickers (search by keyword or get popular ones)
+ * Query: { keyword }
+ */
+router.get('/stickers', verifyApiKey, async (req, res) => {
+  try {
+    console.log('📥 [zalo-service] GET /api/message/stickers received');
+
+    const { keyword = 'happy' } = req.query; // Default to 'happy' for popular stickers
+
+    // 🔧 FIX: Convert accountId to integer (headers are always strings)
+    let accountId = req.headers['x-account-id'];
+    if (accountId) {
+      accountId = parseInt(accountId);
+    }
+
+    let zalo;
+    try {
+      zalo = getZaloClient(accountId);
+    } catch (error) {
+      console.error('❌ [zalo-service] Failed to get Zalo client:', error.message);
+      return res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
+
+    console.log('🔍 [zalo-service] Searching stickers with keyword:', keyword);
+
+    // Step 1: Search for sticker IDs by keyword
+    const stickerIds = await zalo.getStickers(keyword);
+
+    console.log('📋 [zalo-service] Found sticker IDs:', stickerIds?.length || 0);
+
+    if (!stickerIds || stickerIds.length === 0) {
+      return res.json({
+        success: true,
+        message: 'No stickers found',
+        data: {
+          keyword,
+          stickers: []
+        }
+      });
+    }
+
+    // Step 2: Get detailed information for these stickers
+    const stickers = await zalo.getStickersDetail(stickerIds);
+
+    console.log('✅ [zalo-service] Retrieved sticker details:', stickers?.length || 0);
+
+    // Format stickers for frontend
+    const formattedStickers = stickers.map(sticker => ({
+      id: sticker.id,
+      cateId: sticker.cateId || sticker.cateid,
+      type: sticker.type,
+      text: sticker.text || '',
+      uri: sticker.uri,
+      stickerUrl: sticker.stickerUrl,
+      stickerSpriteUrl: sticker.stickerSpriteUrl,
+      stickerWebpUrl: sticker.stickerWebpUrl,
+    }));
+
+    res.json({
+      success: true,
+      message: 'Stickers retrieved successfully',
+      data: {
+        keyword,
+        stickers: formattedStickers
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ [zalo-service] Get stickers error:', {
+      message: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to get stickers'
+    });
+  }
+});
+
+/**
+ * POST /api/message/reaction
+ * Add reaction to a message
+ * Body: { reaction, message_id, cli_msg_id, thread_id, type }
+ */
+router.post('/reaction', verifyApiKey, async (req, res) => {
+  try {
+    console.log('📥 [zalo-service] POST /api/message/reaction received');
+    
+    const { reaction, message_id, cli_msg_id, thread_id, type = 'user' } = req.body;
+    
+    if (!reaction || !message_id || !cli_msg_id || !thread_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: reaction, message_id, cli_msg_id, thread_id'
+      });
+    }
+    
+    let zalo;
+    try {
+      zalo = getZaloClient();
+    } catch (error) {
+      return res.status(503).json({
+        success: false,
+        message: 'Zalo client not initialized. Please login first.'
+      });
+    }
+    
+    const { Reactions, ThreadType } = require('zalo-api-final');
+    const threadType = type === 'group' ? ThreadType.Group : ThreadType.User;
+    
+    // Map Zalo reaction icons to Reactions enum
+    // Zalo uses icons like '/-heart', '/-strong', ':>', ':o', ':-((', ':-h'
+    // zalo-api-final uses Reactions enum like Reactions.HEART, Reactions.LIKE, etc.
+    // IMPORTANT: Reactions enum values are strings like '/-heart', '/-strong', etc.
+    // So Reactions.HEART === '/-heart', Reactions.LIKE === '/-strong', etc.
+    const reactionIconMap = {
+      '/-heart': Reactions.HEART,
+      '/-strong': Reactions.LIKE,
+      ':>': Reactions.HAHA,
+      ':o': Reactions.WOW,
+      ':-((': Reactions.CRY,
+      ':-h': Reactions.ANGRY,
+    };
+    
+    // Convert reaction string to Reactions enum or keep as is
+    let reactionIcon = reaction;
+    if (typeof reaction === 'string') {
+      // First try the icon map (Zalo format to Reactions enum)
+      if (reactionIconMap[reaction]) {
+        reactionIcon = reactionIconMap[reaction];
+        console.log(`📝 [zalo-service] Mapped reaction "${reaction}" to Reactions enum:`, {
+          original: reaction,
+          mapped: reactionIcon,
+          mappedType: typeof reactionIcon,
+          isReactionsEnum: reactionIcon === Reactions.HEART || reactionIcon === Reactions.LIKE || reactionIcon === Reactions.HAHA || reactionIcon === Reactions.WOW || reactionIcon === Reactions.CRY || reactionIcon === Reactions.ANGRY,
+        });
+      }
+      // Then try Reactions enum directly (e.g., 'HEART' -> Reactions.HEART)
+      else if (Reactions[reaction]) {
+        reactionIcon = Reactions[reaction];
+        console.log(`📝 [zalo-service] Found reaction "${reaction}" in Reactions enum:`, {
+          original: reaction,
+          found: reactionIcon,
+          foundType: typeof reactionIcon,
+        });
+      }
+      // Otherwise, use the string as-is (Zalo might accept it directly)
+      else {
+        console.log(`⚠️  [zalo-service] Reaction "${reaction}" not found in Reactions enum, using as-is`);
+      }
+    }
+    
+    // Verify reaction icon is valid
+    // Reactions enum values are strings, so we need to check if it's a valid Reactions enum value
+    const validReactions = [
+      Reactions.HEART, Reactions.LIKE, Reactions.HAHA, Reactions.WOW,
+      Reactions.CRY, Reactions.ANGRY, Reactions.KISS, Reactions.TEARS_OF_JOY,
+      Reactions.ROSE, Reactions.BROKEN_HEART, Reactions.DISLIKE, Reactions.LOVE,
+    ];
+    if (!validReactions.includes(reactionIcon) && typeof reactionIcon === 'string') {
+      console.warn(`⚠️  [zalo-service] Reaction icon "${reactionIcon}" may not be a valid Reactions enum value`);
+    }
+    
+    // Ensure message_id and cli_msg_id are strings
+    const msgIdStr = String(message_id);
+    const cliMsgIdStr = String(cli_msg_id);
+    const threadIdStr = String(thread_id);
+    
+    console.log('😊 [zalo-service] Adding reaction:', {
+      reaction: reactionIcon,
+      reactionType: typeof reactionIcon,
+      message_id: msgIdStr,
+      cli_msg_id: cliMsgIdStr,
+      thread_id: threadIdStr,
+      threadType: threadType === ThreadType.Group ? 'Group' : 'User',
+    });
+    
+    // Build destination object according to zalo-api-final format
+    // According to zalo-api-final, addReaction signature is:
+    // addReaction(icon: Reactions, destination: AddReactionDestination)
+    // AddReactionDestination: { data: { msgId: string, cliMsgId: string }, threadId: string, type: ThreadType }
+    // Note: Both msgId and cliMsgId are REQUIRED (not optional)
+    // zalo-api-final will parse them as integers: parseInt(dest.data.msgId) and parseInt(dest.data.cliMsgId)
+    // Important: cliMsgId and msgId should be different values for proper message identification
+    const destination = {
+      data: {
+        // Both are required - ensure we have valid values
+        msgId: msgIdStr,
+        cliMsgId: cliMsgIdStr && cliMsgIdStr !== msgIdStr ? cliMsgIdStr : msgIdStr, // Use cliMsgId if different, otherwise use msgId
+      },
+      threadId: threadIdStr,
+      type: threadType,
+    };
+    
+    // Warn if cliMsgId and msgId are the same (might cause issues)
+    if (destination.data.cliMsgId === destination.data.msgId) {
+      console.warn('⚠️  [zalo-service] cliMsgId and msgId are the same:', {
+        msgId: destination.data.msgId,
+        cliMsgId: destination.data.cliMsgId,
+        original_cli_msg_id: cli_msg_id,
+        original_message_id: message_id,
+      });
+    }
+    
+    console.log('📤 [zalo-service] Calling zalo.addReaction with:', {
+      icon: reactionIcon,
+      iconType: typeof reactionIcon,
+      iconValue: reactionIcon,
+      destination: destination,
+      destinationData: destination.data,
+    });
+    
+    try {
+      const result = await zalo.addReaction(reactionIcon, destination);
+      
+      console.log('✅ [zalo-service] Reaction added successfully:', {
+        hasResult: !!result,
+        resultType: typeof result,
+        resultKeys: result ? Object.keys(result) : null,
+        result: result,
+      });
+      
+      res.json({
+        success: true,
+        message: 'Reaction added successfully',
+        data: result
+      });
+    } catch (addReactionError) {
+      console.error('❌ [zalo-service] addReaction call failed:', {
+        message: addReactionError.message,
+        stack: addReactionError.stack,
+        error: addReactionError,
+      });
+      throw addReactionError; // Re-throw to be caught by outer catch
+    }
+  } catch (error) {
+    console.error('❌ [zalo-service] Add reaction error:', {
+      message: error.message,
+      stack: error.stack,
+    });
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to add reaction',
+      error: error.stack
+    });
+  }
+});
+
+module.exports = router;
+

@@ -1,0 +1,718 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\HomeworkExercise;
+use App\Models\HomeworkExerciseOption;
+use App\Models\AiSetting;
+use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
+
+class HomeworkExerciseController extends Controller
+{
+    /**
+     * Display a listing of exercises filtered by branch.
+     */
+    public function index(Request $request): JsonResponse
+    {
+        // Get user's branch from header, query param, or authenticated user
+        $branchId = $request->header('X-Branch-Id')
+            ?? $request->input('branch_id')
+            ?? auth()->user()?->branch_id;
+
+        if (!$branchId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Branch ID is required',
+            ], 400);
+        }
+
+        $query = HomeworkExercise::with(['options', 'creator', 'branch', 'subject', 'subjectCategory'])
+            ->where('branch_id', $branchId) // Branch filtering - KEY DIFFERENCE from examination
+            ->when($request->subject_id, fn($q, $subjectId) => $q->bySubject($subjectId))
+            ->when($request->subject_category_id, fn($q, $categoryId) => $q->bySubjectCategory($categoryId))
+            ->when($request->skill, fn($q, $skill) => $q->bySkill($skill))
+            ->when($request->difficulty, fn($q, $difficulty) => $q->byDifficulty($difficulty))
+            ->when($request->type, fn($q, $type) => $q->byType($type))
+            ->when($request->boolean('active_only', true), fn($q) => $q->active())
+            ->when($request->search, fn($q, $search) => $q->search($search))
+            ->when($request->tags, function ($q, $tags) {
+                $tagsArray = is_array($tags) ? $tags : explode(',', $tags);
+                foreach ($tagsArray as $tag) {
+                    $q->whereJsonContains('tags', $tag);
+                }
+            })
+            ->orderBy($request->sort_by ?? 'created_at', $request->sort_order ?? 'desc');
+
+        $perPage = min($request->per_page ?? 20, 100);
+        $exercises = $query->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'data' => $exercises,
+        ]);
+    }
+
+    /**
+     * Store a newly created exercise.
+     */
+    public function store(Request $request): JsonResponse
+    {
+        // Get user's branch from header, query param, or authenticated user
+        $branchId = $request->header('X-Branch-Id')
+            ?? $request->input('branch_id')
+            ?? auth()->user()?->branch_id;
+
+        if (!$branchId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Branch ID is required',
+            ], 400);
+        }
+
+        // Synchronized with Examination module question types
+        $exerciseTypes = [
+            'multiple_choice', 'multiple_response', 'fill_blanks', 'fill_blanks_drag',
+            'matching', 'drag_drop', 'ordering', 'true_false', 'true_false_ng',
+            'essay', 'short_answer', 'audio_response', 'hotspot', 'labeling',
+            'sentence_completion', 'summary_completion', 'note_completion',
+            'table_completion', 'flow_chart', 'matching_headings',
+            'matching_features', 'matching_sentence_endings'
+        ];
+
+        $validator = Validator::make($request->all(), [
+            'subject_id' => 'nullable|exists:exam_subjects,id',
+            'subject_category_id' => 'nullable|exists:exam_subject_categories,id',
+            'skill' => 'required|in:reading,writing,listening,speaking,grammar,vocabulary,math,science,general',
+            'difficulty' => 'required|in:easy,medium,hard,expert',
+            'type' => 'required|in:' . implode(',', $exerciseTypes),
+            'title' => 'required|string|max:500',
+            'content' => 'nullable|array',
+            'instructions' => 'nullable|string',
+            'hints' => 'nullable|string',
+            'solution' => 'nullable|string',
+            'answer_key' => 'nullable|array',
+            'points' => 'nullable|numeric|min:0',
+            'time_limit' => 'nullable|integer|min:0',
+            'tags' => 'nullable|array',
+            'metadata' => 'nullable|array',
+            'settings' => 'nullable|array',
+            'is_active' => 'nullable|boolean',
+            'options' => 'nullable|array',
+            'options.*.content' => 'required_with:options|string',
+            'options.*.is_correct' => 'nullable|boolean',
+            'options.*.feedback' => 'nullable|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            $exercise = HomeworkExercise::create([
+                'uuid' => (string) Str::uuid(),
+                'subject_id' => $request->subject_id,
+                'subject_category_id' => $request->subject_category_id,
+                'skill' => $request->skill,
+                'difficulty' => $request->difficulty,
+                'type' => $request->type,
+                'title' => $request->title,
+                'content' => $request->content,
+                'instructions' => $request->instructions,
+                'hints' => $request->hints,
+                'solution' => $request->solution,
+                'answer_key' => $request->answer_key,
+                'points' => $request->points ?? 1,
+                'time_limit' => $request->time_limit,
+                'branch_id' => $branchId, // Branch-specific
+                'created_by' => auth()->id(),
+                'tags' => $request->tags,
+                'metadata' => $request->metadata,
+                'settings' => $request->settings,
+                'is_active' => $request->boolean('is_active', true),
+            ]);
+
+            // Create options if provided (for multiple choice, etc.)
+            if ($request->has('options')) {
+                $labels = range('A', 'Z');
+                foreach ($request->options as $index => $optionData) {
+                    $exercise->options()->create([
+                        'content' => $optionData['content'],
+                        'label' => $labels[$index] ?? (string)($index + 1),
+                        'is_correct' => $optionData['is_correct'] ?? false,
+                        'sort_order' => $index,
+                        'feedback' => $optionData['feedback'] ?? null,
+                    ]);
+                }
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Exercise created successfully',
+                'data' => $exercise->load(['options']),
+            ], 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Error creating exercise: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Display the specified exercise.
+     */
+    public function show(Request $request, $id): JsonResponse
+    {
+        $branchId = $request->header('X-Branch-Id')
+            ?? $request->input('branch_id')
+            ?? auth()->user()?->branch_id;
+
+        $exercise = HomeworkExercise::with(['options', 'creator', 'branch'])
+            ->where('id', $id)
+            ->where('branch_id', $branchId) // Ensure user can only view exercises from their branch
+            ->first();
+
+        if (!$exercise) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Exercise not found',
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $exercise,
+        ]);
+    }
+
+    /**
+     * Update the specified exercise.
+     */
+    public function update(Request $request, $id): JsonResponse
+    {
+        $branchId = $request->header('X-Branch-Id')
+            ?? $request->input('branch_id')
+            ?? auth()->user()?->branch_id;
+
+        $exercise = HomeworkExercise::where('id', $id)
+            ->where('branch_id', $branchId)
+            ->first();
+
+        if (!$exercise) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Exercise not found',
+            ], 404);
+        }
+
+        // Synchronized with Examination module question types
+        $exerciseTypes = [
+            'multiple_choice', 'multiple_response', 'fill_blanks', 'fill_blanks_drag',
+            'matching', 'drag_drop', 'ordering', 'true_false', 'true_false_ng',
+            'essay', 'short_answer', 'audio_response', 'hotspot', 'labeling',
+            'sentence_completion', 'summary_completion', 'note_completion',
+            'table_completion', 'flow_chart', 'matching_headings',
+            'matching_features', 'matching_sentence_endings'
+        ];
+
+        $validator = Validator::make($request->all(), [
+            'subject_id' => 'nullable|exists:exam_subjects,id',
+            'subject_category_id' => 'nullable|exists:exam_subject_categories,id',
+            'skill' => 'sometimes|in:reading,writing,listening,speaking,grammar,vocabulary,math,science,general',
+            'difficulty' => 'sometimes|in:easy,medium,hard,expert',
+            'type' => 'sometimes|in:' . implode(',', $exerciseTypes),
+            'title' => 'sometimes|string|max:500',
+            'content' => 'nullable|array',
+            'instructions' => 'nullable|string',
+            'hints' => 'nullable|string',
+            'solution' => 'nullable|string',
+            'answer_key' => 'nullable|array',
+            'points' => 'nullable|numeric|min:0',
+            'time_limit' => 'nullable|integer|min:0',
+            'tags' => 'nullable|array',
+            'metadata' => 'nullable|array',
+            'settings' => 'nullable|array',
+            'is_active' => 'nullable|boolean',
+            'options' => 'nullable|array',
+            'options.*.id' => 'nullable|exists:homework_exercise_options,id',
+            'options.*.content' => 'required_with:options|string',
+            'options.*.is_correct' => 'nullable|boolean',
+            'options.*.feedback' => 'nullable|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            $exercise->update($request->only([
+                'subject_id', 'subject_category_id', 'skill', 'difficulty', 'type',
+                'title', 'content', 'instructions', 'hints', 'solution', 'answer_key',
+                'points', 'time_limit', 'tags', 'metadata', 'settings', 'is_active'
+            ]));
+
+            // Update options if provided
+            if ($request->has('options')) {
+                // Delete existing options
+                $exercise->options()->delete();
+
+                // Create new options
+                $labels = range('A', 'Z');
+                foreach ($request->options as $index => $optionData) {
+                    $exercise->options()->create([
+                        'content' => $optionData['content'],
+                        'label' => $labels[$index] ?? (string)($index + 1),
+                        'is_correct' => $optionData['is_correct'] ?? false,
+                        'sort_order' => $index,
+                        'feedback' => $optionData['feedback'] ?? null,
+                    ]);
+                }
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Exercise updated successfully',
+                'data' => $exercise->load(['options']),
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Error updating exercise: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Remove the specified exercise.
+     */
+    public function destroy(Request $request, $id): JsonResponse
+    {
+        $branchId = $request->header('X-Branch-Id')
+            ?? $request->input('branch_id')
+            ?? auth()->user()?->branch_id;
+
+        $exercise = HomeworkExercise::where('id', $id)
+            ->where('branch_id', $branchId)
+            ->first();
+
+        if (!$exercise) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Exercise not found',
+            ], 404);
+        }
+
+        // Check if exercise is used in any assignments
+        if ($exercise->assignments()->count() > 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cannot delete exercise that is used in assignments',
+            ], 422);
+        }
+
+        try {
+            $exercise->delete(); // Soft delete
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Exercise deleted successfully',
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error deleting exercise: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Get exercise statistics for current branch
+     */
+    public function statistics(Request $request): JsonResponse
+    {
+        $branchId = $request->header('X-Branch-Id')
+            ?? $request->input('branch_id')
+            ?? auth()->user()?->branch_id;
+
+        if (!$branchId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Branch ID is required',
+            ], 400);
+        }
+
+        $stats = [
+            'total' => HomeworkExercise::where('branch_id', $branchId)->count(),
+            'active' => HomeworkExercise::where('branch_id', $branchId)->active()->count(),
+            'by_type' => HomeworkExercise::where('branch_id', $branchId)
+                ->select('type', DB::raw('count(*) as count'))
+                ->groupBy('type')
+                ->pluck('count', 'type'),
+            'by_skill' => HomeworkExercise::where('branch_id', $branchId)
+                ->select('skill', DB::raw('count(*) as count'))
+                ->groupBy('skill')
+                ->pluck('count', 'skill'),
+            'by_difficulty' => HomeworkExercise::where('branch_id', $branchId)
+                ->select('difficulty', DB::raw('count(*) as count'))
+                ->groupBy('difficulty')
+                ->pluck('count', 'difficulty'),
+        ];
+
+        return response()->json([
+            'success' => true,
+            'data' => $stats,
+        ]);
+    }
+
+    /**
+     * Generate homework exercises using AI based on session materials
+     */
+    public function generateWithAI(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'session_id' => 'required|exists:lesson_plan_sessions,id',
+            'material_ids' => 'required|array|min:1',
+            'material_ids.*' => 'exists:session_materials,id',
+            'subject_id' => 'nullable|exists:subjects,id',
+            'question_count' => 'nullable|integer|min:3|max:20',
+            'difficulty' => 'nullable|in:easy,medium,hard,mixed',
+            'question_types' => 'nullable|array',
+            'question_types.*.type' => 'required|string',
+            'question_types.*.count' => 'required|integer|min:1|max:10'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $branchId = $request->header('X-Branch-Id') ?? auth()->user()?->branch_id;
+
+        if (!$branchId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Branch ID is required',
+            ], 400);
+        }
+
+        try {
+            // Fetch session and materials
+            $session = \App\Models\LessonPlanSession::findOrFail($request->session_id);
+            $materials = \App\Models\SessionMaterial::whereIn('id', $request->material_ids)->get();
+
+            if ($materials->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No materials found'
+                ], 404);
+            }
+
+            // Prepare materials content for AI
+            $materialsContent = $materials->map(function ($material) {
+                return [
+                    'title' => $material->title,
+                    'description' => $material->description,
+                    'content' => strip_tags($material->content)
+                ];
+            })->toArray();
+
+            $questionCount = $request->question_count ?? 10;
+            $difficulty = $request->difficulty ?? 'mixed';
+            $questionTypes = $request->question_types ?? null;
+
+            // Call AI to generate homework
+            $generatedExercises = $this->callAIForHomework(
+                $branchId,
+                $session,
+                $materialsContent,
+                $questionCount,
+                $difficulty,
+                $questionTypes
+            );
+
+            // Save generated exercises to database
+            $savedExercises = [];
+            foreach ($generatedExercises as $exerciseData) {
+                $exercise = HomeworkExercise::create([
+                    'branch_id' => $branchId,
+                    'subject_id' => $request->subject_id,
+                    'subject_category_id' => $exerciseData['subject_category_id'] ?? null,
+                    'title' => $exerciseData['title'],
+                    'question' => $exerciseData['question'],
+                    'instructions' => $exerciseData['instructions'] ?? null,
+                    'type' => $exerciseData['type'],
+                    'skill' => $exerciseData['skill'] ?? 'reading',
+                    'difficulty' => $exerciseData['difficulty'] ?? $difficulty,
+                    'points' => $exerciseData['points'] ?? 1,
+                    'correct_answer' => $exerciseData['correct_answer'] ?? null,
+                    'sample_answer' => $exerciseData['sample_answer'] ?? null,
+                    'explanation' => $exerciseData['explanation'] ?? null,
+                    'tags' => $exerciseData['tags'] ?? [],
+                    'metadata' => [
+                        'generated_by' => 'ai',
+                        'session_id' => $session->id,
+                        'materials' => array_column($materialsContent, 'title')
+                    ],
+                    'status' => 'active',
+                    'created_by' => auth()->id()
+                ]);
+
+                // Create options if applicable
+                if (isset($exerciseData['options']) && !empty($exerciseData['options'])) {
+                    foreach ($exerciseData['options'] as $index => $optionData) {
+                        HomeworkExerciseOption::create([
+                            'homework_exercise_id' => $exercise->id,
+                            'option_text' => $optionData['text'],
+                            'is_correct' => $optionData['is_correct'] ?? false,
+                            'sort_order' => $index
+                        ]);
+                    }
+                }
+
+                $savedExercises[] = $exercise->load('options');
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Generated ' . count($savedExercises) . ' homework exercises',
+                'data' => [
+                    'exercises' => $savedExercises,
+                    'session' => $session,
+                    'materials_used' => count($materials)
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Homework AI Generation Error', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to generate homework: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Call AI API to generate homework questions
+     */
+    private function callAIForHomework($branchId, $session, $materialsContent, $questionCount, $difficulty, $questionTypes = null): array
+    {
+        \Log::info('Homework AI Generation - Starting', [
+            'user_id' => auth()->user()->id,
+            'branch_id' => $branchId,
+            'session_id' => $session->id
+        ]);
+
+        // Get OpenAI settings using AiSetting model
+        $aiSettings = AiSetting::getSettingsByProvider($branchId, 'quality_management', 'openai');
+
+        if (!$aiSettings || !$aiSettings->api_key) {
+            throw new \Exception("OpenAI settings not configured for this branch. Please contact administrator.");
+        }
+
+        $apiKey = $aiSettings->api_key; // Automatically decrypted by accessor
+        $model = $aiSettings->model ?? 'gpt-5.1';
+
+        // Build the prompt (combine system and user prompts for GPT 5.1)
+        $systemPrompt = $this->buildHomeworkGenerationPrompt();
+        $userPrompt = $this->buildUserPromptForHomework($session, $materialsContent, $questionCount, $difficulty, $questionTypes);
+
+        // Combine prompts for GPT 5.1 Responses API
+        $fullPrompt = $systemPrompt . "\n\n" . $userPrompt;
+
+        \Log::info('Calling OpenAI GPT 5.1 API', [
+            'model' => $model,
+            'prompt_length' => strlen($fullPrompt)
+        ]);
+
+        // Call OpenAI GPT 5.1 Responses API
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . $apiKey,
+            'Content-Type' => 'application/json',
+        ])->withOptions([
+            'verify' => false,
+            'curl' => [CURLOPT_SSL_VERIFYPEER => false, CURLOPT_SSL_VERIFYHOST => false],
+        ])->timeout(600)->post('https://api.openai.com/v1/responses', [
+            'model' => $model,
+            'input' => $fullPrompt,
+            'reasoning' => ['effort' => 'low']
+        ]);
+
+        if (!$response->successful()) {
+            $errorData = $response->json();
+            \Log::error('OpenAI API Error', [
+                'status' => $response->status(),
+                'error' => $errorData
+            ]);
+            throw new \Exception('AI API call failed: ' . ($errorData['error']['message'] ?? $response->body()));
+        }
+
+        $data = $response->json();
+
+        // Extract content from Responses API
+        $content = '';
+        if (isset($data['output_text']) && is_string($data['output_text'])) {
+            $content = $data['output_text'];
+        } elseif (isset($data['output']) && is_string($data['output'])) {
+            $content = $data['output'];
+        }
+
+        \Log::info('OpenAI Response received', [
+            'content_length' => strlen($content)
+        ]);
+
+        // Parse JSON response
+        return $this->parseAIHomeworkResponse($content);
+    }
+
+    private function buildHomeworkGenerationPrompt(): string
+    {
+        return <<<EOT
+You are an expert ESL/IELTS teacher creating homework exercises for students.
+
+Your task is to generate homework questions based on the materials students learned in class.
+
+IMPORTANT GUIDELINES:
+1. Create questions that TEST what students learned in the materials
+2. Questions should be IELTS-style where appropriate (reading, listening, writing)
+3. Mix different question types for variety
+4. Ensure questions are clear, unambiguous, and at the appropriate difficulty level
+5. Include correct answers and explanations
+
+QUESTION TYPES YOU CAN USE:
+- multiple_choice: Questions with 4 options (A, B, C, D)
+- true_false: True/False questions
+- true_false_ng: True/False/Not Given (IELTS style)
+- fill_blanks: Fill in the blank(s) with words from materials
+- short_answer: Short answer questions (1-3 sentences)
+- matching: Match items (e.g., vocabulary to definitions)
+- sentence_completion: Complete sentences with words from passage
+
+RESPONSE FORMAT:
+Return a JSON array of exercises. Each exercise must have:
+{
+  "title": "Brief title (5-10 words)",
+  "question": "The question text",
+  "instructions": "Instructions for answering (optional)",
+  "type": "question_type",
+  "skill": "reading|writing|vocabulary|grammar",
+  "difficulty": "easy|medium|hard",
+  "points": 1,
+  "correct_answer": "The correct answer (for fill_blanks, short_answer, etc.)",
+  "sample_answer": "Sample answer for open-ended questions",
+  "explanation": "Brief explanation of the answer",
+  "options": [  // Only for multiple_choice, matching
+    {"text": "Option A", "is_correct": true},
+    {"text": "Option B", "is_correct": false},
+    ...
+  ],
+  "tags": ["vocabulary", "topic_name", ...]
+}
+
+CRITICAL: Return ONLY valid JSON array. No markdown, no explanations, just the JSON.
+EOT;
+    }
+
+    private function buildUserPromptForHomework($session, $materialsContent, $questionCount, $difficulty, $questionTypes = null): string
+    {
+        $materialsText = '';
+        foreach ($materialsContent as $index => $material) {
+            $materialsText .= "Material " . ($index + 1) . ": " . $material['title'] . "\n";
+            if (!empty($material['description'])) {
+                $materialsText .= "Description: " . $material['description'] . "\n";
+            }
+            $materialsText .= "Content:\n" . substr($material['content'], 0, 3000) . "\n\n";
+        }
+
+        // Build question types specification
+        $questionTypesText = '';
+        if ($questionTypes && is_array($questionTypes) && count($questionTypes) > 0) {
+            $questionTypesText = "Question Types to Generate:\n";
+            $totalCount = 0;
+            foreach ($questionTypes as $qt) {
+                $type = $qt['type'] ?? '';
+                $count = $qt['count'] ?? 0;
+                $questionTypesText .= "- {$count} questions of type: {$type}\n";
+                $totalCount += $count;
+            }
+            $questionTypesText .= "\nTotal: {$totalCount} questions\n";
+        }
+
+        $requirementsText = $questionTypes
+            ? "- Generate questions according to the types and counts specified above"
+            : "- Generate exactly {$questionCount} homework questions\n- Mix different question types for variety";
+
+        return <<<EOT
+Session Information:
+- Session Number: {$session->session_number}
+- Lesson Title: {$session->lesson_title}
+
+Materials Students Learned:
+{$materialsText}
+
+{$questionTypesText}
+
+Requirements:
+{$requirementsText}
+- Difficulty level: {$difficulty}
+- Questions should test students' understanding of the materials above
+- Use IELTS-style formats where appropriate
+- Ensure questions directly relate to the content in the materials
+
+Return a JSON array of exercises following the format specified.
+EOT;
+    }
+
+    private function parseAIHomeworkResponse(string $content): array
+    {
+        // Remove markdown code blocks if present
+        $content = preg_replace('/```json\s*/i', '', $content);
+        $content = preg_replace('/```\s*$/i', '', $content);
+        $content = trim($content);
+
+        $exercises = json_decode($content, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            throw new \Exception('Failed to parse AI response as JSON: ' . json_last_error_msg());
+        }
+
+        if (!is_array($exercises)) {
+            throw new \Exception('AI response is not an array');
+        }
+
+        return $exercises;
+    }
+}

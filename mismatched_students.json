@@ -1,0 +1,479 @@
+[
+    {
+        "student_id": 71,
+        "user_id": 319,
+        "email": "user00129@songthuy.edu.vn",
+        "name": "MINH T\u00c2M",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 72,
+        "user_id": 320,
+        "email": "user00130@songthuy.edu.vn",
+        "name": "MINH CH\u00c2U",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 73,
+        "user_id": 321,
+        "email": "user00131@songthuy.edu.vn",
+        "name": "T\u00c2M AN",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 74,
+        "user_id": 322,
+        "email": "user00132@songthuy.edu.vn",
+        "name": "MAI TRANG",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 75,
+        "user_id": 323,
+        "email": "user00133@songthuy.edu.vn",
+        "name": "TH\u1ea2O UY\u00caN",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 76,
+        "user_id": 324,
+        "email": "user00134@songthuy.edu.vn",
+        "name": "L\u00ca NG\u1eccC LINH",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 77,
+        "user_id": 325,
+        "email": "user00135@songthuy.edu.vn",
+        "name": "PH\u1ea0M THANH TH\u1ea2O",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 78,
+        "user_id": 326,
+        "email": "user00136@songthuy.edu.vn",
+        "name": "TR\u00c0 MY",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 79,
+        "user_id": 327,
+        "email": "user00137@songthuy.edu.vn",
+        "name": "B\u1ea2O UY\u00caN",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 80,
+        "user_id": 328,
+        "email": "user00138@songthuy.edu.vn",
+        "name": "PH\u01af\u01a0NG ANH",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 81,
+        "user_id": 329,
+        "email": "user00139@songthuy.edu.vn",
+        "name": "HO\u00c0NG PH\u01af\u01a0NG TH\u1ea2O",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 82,
+        "user_id": 330,
+        "email": "user00140@songthuy.edu.vn",
+        "name": "C\u00c1P LINH NHI",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 83,
+        "user_id": 331,
+        "email": "user00141@songthuy.edu.vn",
+        "name": "NH\u01af QU\u1ef2NH",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 84,
+        "user_id": 332,
+        "email": "user00142@student.songthuy.edu.vn",
+        "name": "NGUY\u1ec4N T\u01af\u1edcNG VY",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 85,
+        "user_id": 333,
+        "email": "user00143@student.songthuy.edu.vn",
+        "name": "C\u00c1P NGUY\u1ec4N ANH TH\u01af",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 86,
+        "user_id": 334,
+        "email": "user00144@student.songthuy.edu.vn",
+        "name": "NGUY\u1ec4N VI\u1ebeT TRI",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 87,
+        "user_id": 335,
+        "email": "user00145@student.songthuy.edu.vn",
+        "name": "NGUY\u1ec4N \u0110\u0102NG T\u00d9NG",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 90,
+        "user_id": 338,
+        "email": "user00148@student.songthuy.edu.vn",
+        "name": "L\u00ca \u0110\u1ee8C TH\u1ecaNH",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 91,
+        "user_id": 339,
+        "email": "user00149@student.songthuy.edu.vn",
+        "name": "DUY LINH",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 92,
+        "user_id": 340,
+        "email": "user00150@student.songthuy.edu.vn",
+        "name": "TH\u1ebe ANH",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 93,
+        "user_id": 341,
+        "email": "user00151@student.songthuy.edu.vn",
+        "name": "TR\u01af\u1edcNG AN",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 94,
+        "user_id": 342,
+        "email": "user00152@student.songthuy.edu.vn",
+        "name": "Tr\u01b0\u01a1ng Minh Kh\u00f4i",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 95,
+        "user_id": 343,
+        "email": "user00153@student.songthuy.edu.vn",
+        "name": "Thi\u1ec1u Th\u1ecb Huy\u1ec1n My",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 96,
+        "user_id": 344,
+        "email": "user00154@student.songthuy.edu.vn",
+        "name": "Nguy\u1ec5n Ng\u1ecdc C\u00e1t Ti\u00ean",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 97,
+        "user_id": 345,
+        "email": "user00155@student.songthuy.edu.vn",
+        "name": "Nguy\u1ec5n Tu\u1ea5n Ki\u1ec7t",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 98,
+        "user_id": 346,
+        "email": "user00156@student.songthuy.edu.vn",
+        "name": "Tr\u1ecbnh Th\u1ecb B\u00ecnh An",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 99,
+        "user_id": 347,
+        "email": "user00157@student.songthuy.edu.vn",
+        "name": "Nguy\u1ec5n B\u00edch Ng\u00e2n",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 100,
+        "user_id": 348,
+        "email": "user00158@student.songthuy.edu.vn",
+        "name": "Mai Chi",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 101,
+        "user_id": 349,
+        "email": "user00159@student.songthuy.edu.vn",
+        "name": "Minh Nh\u1eadt",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 103,
+        "user_id": 351,
+        "email": "user00161@student.songthuy.edu.vn",
+        "name": "Gia Huy",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 104,
+        "user_id": 352,
+        "email": "user00162@student.songthuy.edu.vn",
+        "name": "Nguy\u1ec5n Th\u1ecb Th\u01b0\u01a1ng",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 105,
+        "user_id": 353,
+        "email": "user00163@student.songthuy.edu.vn",
+        "name": "L\u00ea Th\u1ecb B\u1ea3o Ng\u1ecdc",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 106,
+        "user_id": 354,
+        "email": "user00164@student.songthuy.edu.vn",
+        "name": "Tr\u1ecbnh Th\u1ecb Thu Ph\u01b0\u01a1ng",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 107,
+        "user_id": 355,
+        "email": "user00165@student.songthuy.edu.vn",
+        "name": "Tr\u1ecbnh T\u00fa Quy\u00ean",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 108,
+        "user_id": 356,
+        "email": "user00166@student.songthuy.edu.vn",
+        "name": "Ho\u00e0ng B\u1ea3o Anh",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 109,
+        "user_id": 357,
+        "email": "user00167@student.songthuy.edu.vn",
+        "name": "Tr\u1ecbnh Xu\u00e2n Kh\u00f4i",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 110,
+        "user_id": 358,
+        "email": "user00168@student.songthuy.edu.vn",
+        "name": "Ph\u1ea1m T\u01b0\u1eddng Vy",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 111,
+        "user_id": 359,
+        "email": "user00169@student.songthuy.edu.vn",
+        "name": "Nguy\u1ec5n Th\u1ecb Huy\u1ec1n My",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 112,
+        "user_id": 360,
+        "email": "user00170@student.songthuy.edu.vn",
+        "name": "Nguy\u1ec5n Tr\u01b0\u01a1ng Ng\u1ecdc Tr\u00e2m",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 113,
+        "user_id": 361,
+        "email": "user00171@student.songthuy.edu.vn",
+        "name": "L\u00ea T\u01b0\u1eddng An",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 114,
+        "user_id": 362,
+        "email": "user00172@student.songthuy.edu.vn",
+        "name": "Nguy\u1ec5n Th\u1ecb Anh Th\u01b0",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 115,
+        "user_id": 363,
+        "email": "user00173@student.songthuy.edu.vn",
+        "name": "L\u00ea Th\u1ecb Y\u1ebfn Nhi",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 116,
+        "user_id": 364,
+        "email": "user00174@student.songthuy.edu.vn",
+        "name": "L\u00ea Ng\u1ecdc Huy\u1ec1n",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 117,
+        "user_id": 365,
+        "email": "user00175@student.songthuy.edu.vn",
+        "name": "Tr\u1ecbnh Minh Th\u01b0",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 118,
+        "user_id": 366,
+        "email": "user00176@student.songthuy.edu.vn",
+        "name": "L\u00ea Minh Tuy\u1ebfn",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 119,
+        "user_id": 367,
+        "email": "user00177@student.songthuy.edu.vn",
+        "name": "TR\u1ecaNH MINH LONG",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 120,
+        "user_id": 368,
+        "email": "user00178@student.songthuy.edu.vn",
+        "name": "NGUY\u1ec4N TH\u00c0NH V\u0102N",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 121,
+        "user_id": 369,
+        "email": "user00179@student.songthuy.edu.vn",
+        "name": "NGUY\u1ec4N B\u1ea2O TR\u00c2M",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 122,
+        "user_id": 370,
+        "email": "user00180@student.songthuy.edu.vn",
+        "name": "L\u00ca ANH KI\u1ec6T",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 123,
+        "user_id": 371,
+        "email": "user00181@student.songthuy.edu.vn",
+        "name": "TR\u1ea6N \u0110\u1ee8C QUANG",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 124,
+        "user_id": 372,
+        "email": "user00182@student.songthuy.edu.vn",
+        "name": "TR\u00c2N L\u00ca GIA H\u01afNG",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 125,
+        "user_id": 373,
+        "email": "user00183@student.songthuy.edu.vn",
+        "name": "TR\u1ea6N QUANG MINH",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    },
+    {
+        "student_id": 126,
+        "user_id": 374,
+        "email": "user00184@student.songthuy.edu.vn",
+        "name": "TR\u1ecaNH GIA HUY",
+        "current_branch_id": 2,
+        "correct_branch_id": 1,
+        "enrollment_count": 1
+    }
+]

@@ -1,0 +1,146 @@
+/**
+ * SESSION SHARING ROUTES - SIMPLIFIED VERSION
+ * All branches SHARE the same API instance (reference sharing)
+ * No credential cloning, no database loading - simple and reliable
+ */
+
+const express = require("express");
+const router = express.Router();
+const { verifyApiKey } = require("../middleware/auth");
+const http = require("http");
+
+// Import from zaloClient
+const {
+  sessions,
+  accountToZaloId,
+  getSession,
+  sessionData
+} = require("../services/zaloClient");
+
+/**
+ * POST /api/session/create-alias
+ * Map new account_id to existing session via zalo_id
+ *
+ * SIMPLE APPROACH: All branches share the SAME API instance
+ * No cloning, no credential loading - just reference sharing
+ *
+ * Body: { account_id: number }
+ */
+router.post("/create-alias", verifyApiKey, async (req, res) => {
+  try {
+    const accountId = parseInt(req.body.account_id);
+
+    if (!accountId) {
+      return res.status(400).json({
+        success: false,
+        message: "account_id is required"
+      });
+    }
+
+    console.log(`\n🔗 [Session Sharing] Creating alias for account ${accountId}...`);
+
+    // Check if session already exists for this account
+    if (getSession(accountId)) {
+      console.log(`   ✅ Session already exists for account ${accountId}`);
+      return res.json({
+        success: true,
+        message: "Session already exists",
+        accountId: accountId
+      });
+    }
+
+    // Fetch zalo_id from Laravel
+    const laravelUrl = process.env.LARAVEL_URL || "http://127.0.0.1:8000";
+    const fetchUrl = `${laravelUrl}/api/zalo/accounts/${accountId}/zalo-id`;
+
+    console.log(`   📡 Fetching zalo_id from: ${fetchUrl}`);
+
+    const zaloIdData = await new Promise((resolve, reject) => {
+      http.get(fetchUrl, (resp) => {
+        let data = "";
+        resp.on("data", (chunk) => { data += chunk; });
+        resp.on("end", () => {
+          try {
+            resolve(JSON.parse(data));
+          } catch (e) {
+            reject(e);
+          }
+        });
+      }).on("error", reject);
+    });
+
+    if (!zaloIdData.success || !zaloIdData.data || !zaloIdData.data.zalo_id) {
+      console.log(`   ❌ Could not fetch zalo_id for account ${accountId}`);
+      return res.status(404).json({
+        success: false,
+        message: "Could not fetch zalo_id for account"
+      });
+    }
+
+    const zaloId = zaloIdData.data.zalo_id;
+    console.log(`   ✅ Got zalo_id: ${zaloId}`);
+
+    // Find existing session with this zalo_id
+    let existingSession = sessions.get(zaloId);
+
+    if (!existingSession) {
+      // Try to find session by checking all accountIds
+      console.log(`   🔍 Session not found by zalo_id, checking account mappings...`);
+
+      for (const [accId, mappedZaloId] of accountToZaloId.entries()) {
+        if (mappedZaloId === zaloId) {
+          existingSession = sessions.get(accId);
+          if (existingSession) {
+            console.log(`   ✅ Found session via account ${accId}`);
+            break;
+          }
+        }
+      }
+    }
+
+    if (!existingSession) {
+      console.log(`   ❌ No existing session found for zalo_id ${zaloId}`);
+      return res.status(404).json({
+        success: false,
+        message: `No session found for zalo_id ${zaloId}. Please login first on any branch.`
+      });
+    }
+
+    // SIMPLE: Just share the same instance reference
+    console.log(`   ✅ SHARING existing session reference (no cloning)`);
+    sessions.set(accountId, existingSession);
+    accountToZaloId.set(accountId, zaloId);
+
+    // Initialize session data for this account
+    if (!sessionData.has(accountId)) {
+      sessionData.set(accountId, {
+        isInitialized: true,
+        loginCompleted: true,
+        loginInProgress: false,
+        wsListener: null,
+        keepAliveInterval: null,
+        isRestarting: false,
+        restartTimeout: null
+      });
+    }
+
+    console.log(`   ✅ Alias created: account ${accountId} -> zalo_id ${zaloId}`);
+    console.log(`   📊 Total sessions: ${sessions.size}, Total mappings: ${accountToZaloId.size}`);
+
+    return res.json({
+      success: true,
+      message: "Session alias created (shared reference)",
+      accountId: accountId,
+      zaloId: zaloId
+    });
+
+  } catch (error) {
+    console.error("❌ [Session Sharing] Create alias error:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+module.exports = router;

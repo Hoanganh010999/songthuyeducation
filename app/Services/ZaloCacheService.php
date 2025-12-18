@@ -1,0 +1,488 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\ZaloAccount;
+use App\Models\ZaloFriend;
+use App\Models\ZaloGroup;
+use App\Services\ZaloAvatarService;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
+
+class ZaloCacheService
+{
+    /**
+     * Sync friends from API to database
+     *
+     */
+    public function syncFriends(ZaloAccount $account, array $friendsFromApi): array
+    {
+        $synced = 0;
+        $updated = 0;
+        $created = 0;
+        $deleted = 0;
+
+        // Collect all friend IDs from API response
+        $apiFriendIds = [];
+
+        // 🔥 NEW: Initialize progress tracking
+        $totalFriends = count($friendsFromApi);
+        $this->updateSyncProgress($account->id, 'friends', 0, $totalFriends, 'Đang đồng bộ danh sách bạn bè...');
+
+        foreach ($friendsFromApi as $index => $friendData) {
+            $zaloUserId = $friendData['id'] ?? $friendData['userId'] ?? $friendData['user_id'] ?? null;
+
+            if (!$zaloUserId) {
+                continue;
+            }
+
+            // Track this friend ID from API
+            $apiFriendIds[] = $zaloUserId;
+
+            $friendDataNormalized = [
+                'name' => $friendData['displayName'] ?? $friendData['zaloName'] ?? $friendData['name'] ?? $friendData['userName'] ?? $friendData['user_name'] ?? null,
+                'phone' => $friendData['phoneNumber'] ?? $friendData['phone'] ?? null,
+                'avatar_url' => $friendData['avatar'] ?? $friendData['avatarUrl'] ?? $friendData['avatar_url'] ?? null,
+                'bio' => $friendData['bio'] ?? $friendData['description'] ?? null,
+                'metadata' => $friendData,
+            ];
+
+            // Use updateOrCreate to avoid duplicate key errors during relogin
+            Log::info('[ZaloCache] 🔄 About to call updateOrCreate', [
+                'account_id' => $account->id,
+                'zalo_user_id' => $zaloUserId,
+                'name' => $friendDataNormalized['name'],
+            ]);
+
+            $wasRecentlyCreated = false;
+            try {
+                // 🔥 CRITICAL: Add zalo_account_id and branch_id to data for INSERT
+                $friendDataNormalized['zalo_account_id'] = $account->id;
+                $friendDataNormalized['branch_id'] = $account->branch_id;
+
+                $friend = ZaloFriend::updateOrCreate(
+                    [
+                        'zalo_account_id' => $account->id,
+                        'zalo_user_id' => $zaloUserId,
+                    ],
+                    $friendDataNormalized
+                );
+
+                Log::info('[ZaloCache] ✅ updateOrCreate completed', [
+                    'friend_id' => $friend->id,
+                    'was_created' => $friend->wasRecentlyCreated,
+                ]);
+            } catch (\Illuminate\Database\QueryException $e) {
+                // If duplicate key error, try to update existing record
+                if ($e->getCode() == 23000) {
+                    Log::warning('[ZaloCache] ⚠️ Duplicate key, updating existing friend', [
+                        'zalo_user_id' => $zaloUserId,
+                        'error' => substr($e->getMessage(), 0, 200),
+                    ]);
+
+                    // Try to find and update existing record (cast to string for compatibility)
+                    $friend = ZaloFriend::where('zalo_account_id', (int)$account->id)
+                        ->where('zalo_user_id', (string)$zaloUserId)
+                        ->first();
+
+                    if ($friend) {
+                        $friend->update($friendDataNormalized);
+                        $updated++;
+                        Log::info('[ZaloCache] ✅ Updated existing friend after duplicate error', [
+                            'friend_id' => $friend->id,
+                        ]);
+                    } else {
+                        // Record exists but we can't find it (transaction issue), skip this friend
+                        Log::warning('[ZaloCache] ⚠️ Skipping friend due to duplicate (cannot locate record)', [
+                            'zalo_user_id' => $zaloUserId,
+                        ]);
+                        continue; // Skip to next friend
+                    }
+                } else {
+                    throw $e;
+                }
+            }
+
+            if (isset($friend) && $friend->wasRecentlyCreated) {
+                $created++;
+            } elseif (isset($friend)) {
+                $updated++;
+            }
+
+
+            $synced++;
+
+            // 🔥 FIX: Update progress less frequently (every 20% or on completion)
+            // This reduces message flashing from ~19 times to ~5 times for 188 friends
+            $progressMilestone = max(1, (int)($totalFriends * 0.2)); // Every 20%, minimum 1
+            if ($synced % $progressMilestone === 0 || $synced === $totalFriends) {
+                $this->updateSyncProgress($account->id, 'friends', $synced, $totalFriends, 'Đang đồng bộ danh sách bạn bè...');
+            }
+        }
+
+        // 🔥 NEW: Delete friends that are no longer in API response
+        // "thiếu thì thêm mà thừa thì xóa" - add missing, delete extra
+        if (!empty($apiFriendIds)) {
+            $deleted = ZaloFriend::where('zalo_account_id', $account->id)
+                ->whereNotIn('zalo_user_id', $apiFriendIds)
+                ->delete();
+        }
+
+        // Update last sync time
+        $account->update(['last_sync_at' => now()]);
+
+        // 🔥 NEW: Mark friends sync as complete
+        $this->updateSyncProgress($account->id, 'friends', $totalFriends, $totalFriends, 'Hoàn thành đồng bộ danh sách bạn bè', true);
+
+        Log::info('[ZaloCache] Synced friends', [
+            'account_id' => $account->id,
+            'synced' => $synced,
+            'created' => $created,
+            'updated' => $updated,
+            'deleted' => $deleted,
+        ]);
+
+        return [
+            'synced' => $synced,
+            'created' => $created,
+            'updated' => $updated,
+            'deleted' => $deleted,
+        ];
+    }
+
+    /**
+     * Sync groups from API to database
+     *
+     */
+    public function syncGroups(ZaloAccount $account, array $groupsFromApi): array
+    {
+        Log::info('[ZaloCache] Starting syncGroups', [
+            'account_id' => $account->id,
+            'groups_count' => count($groupsFromApi),
+        ]);
+
+        $synced = 0;
+        $updated = 0;
+        $created = 0;
+        $deleted = 0;
+
+        // Collect all group IDs from API response
+        $apiGroupIds = [];
+
+        // 🔥 NEW: Initialize progress tracking
+        $totalGroups = count($groupsFromApi);
+        $this->updateSyncProgress($account->id, 'groups', 0, $totalGroups, 'Đang đồng bộ danh sách nhóm...');
+
+        foreach ($groupsFromApi as $index => $groupData) {
+            // Handle gridInfoMap structure (from zalo-service normalization)
+            // If groupData has gridInfoMap, extract the actual group info
+            if (isset($groupData['gridInfoMap']) && is_array($groupData['gridInfoMap'])) {
+                // Extract from gridInfoMap
+                $groupId = $groupData['id'] ?? array_key_first($groupData['gridInfoMap']);
+                $groupInfo = $groupData['gridInfoMap'][$groupId] ?? null;
+                
+                if ($groupInfo) {
+                    // Calculate members count from multiple sources
+                    $membersCount = 0;
+
+                    // Priority 1: Use totalMember if available (most accurate)
+                    if (isset($groupInfo['totalMember']) && is_numeric($groupInfo['totalMember'])) {
+                        $membersCount = (int)$groupInfo['totalMember'];
+                    } elseif (isset($groupInfo['memberIds']) && is_array($groupInfo['memberIds']) && count($groupInfo['memberIds']) > 0) {
+                        // Priority 2: Count memberIds if available
+                        $membersCount = count($groupInfo['memberIds']);
+                    } elseif (isset($groupInfo['memVerList']) && is_array($groupInfo['memVerList'])) {
+                        // Priority 3: Count unique member IDs from memVerList (format: "userId_version")
+                        $uniqueMembers = [];
+                        foreach ($groupInfo['memVerList'] as $memVer) {
+                            if (is_string($memVer)) {
+                                $parts = explode('_', $memVer);
+                                if (!empty($parts[0])) {
+                                    $uniqueMembers[$parts[0]] = true;
+                                }
+                            }
+                        }
+                        $membersCount = count($uniqueMembers);
+                    }
+
+                    Log::info('[ZaloCache] Calculated members_count for group', [
+                        'group_id' => $groupInfo['groupId'] ?? 'unknown',
+                        'name' => $groupInfo['name'] ?? 'unknown',
+                        'totalMember' => $groupInfo['totalMember'] ?? 'N/A',
+                        'memberIds_count' => isset($groupInfo['memberIds']) ? count($groupInfo['memberIds']) : 'N/A',
+                        'memVerList_count' => isset($groupInfo['memVerList']) ? count($groupInfo['memVerList']) : 'N/A',
+                        'calculated_members_count' => $membersCount,
+                    ]);
+                    
+                    // Merge gridInfoMap data into main groupData
+                    $groupData = array_merge($groupData, [
+                        'id' => $groupInfo['groupId'] ?? $groupId,
+                        'name' => $groupInfo['name'] ?? $groupData['name'] ?? null,
+                        'description' => $groupInfo['desc'] ?? $groupData['description'] ?? null,
+                        'avatar' => $groupInfo['avt'] ?? $groupInfo['fullAvt'] ?? $groupData['avatar'] ?? null,
+                        'members_count' => $membersCount > 0 ? $membersCount : ($groupData['members_count'] ?? 0),
+                        'adminIds' => $groupInfo['adminIds'] ?? $groupData['adminIds'] ?? [],
+                        'creatorId' => $groupInfo['creatorId'] ?? $groupData['creatorId'] ?? null,
+                        'type' => $groupInfo['type'] ?? $groupData['type'] ?? null,
+                    ]);
+                }
+            }
+            
+            // Log first group for debugging
+            if ($index === 0) {
+                Log::info('[ZaloCache] First group data sample (after processing)', [
+                    'keys' => array_keys($groupData),
+                    'id' => $groupData['id'] ?? 'missing',
+                    'name' => $groupData['name'] ?? 'missing',
+                    'has_gridInfoMap' => isset($groupData['gridInfoMap']),
+                ]);
+            }
+            
+            $zaloGroupId = $groupData['id'] ?? $groupData['groupId'] ?? $groupData['group_id'] ?? null;
+
+            if (!$zaloGroupId) {
+                Log::warning('[ZaloCache] Group missing ID', [
+                    'group_data_keys' => array_keys($groupData),
+                    'group_data_sample' => json_encode(array_slice($groupData, 0, 10), JSON_UNESCAPED_UNICODE),
+                ]);
+                continue;
+            }
+
+            // Track this group ID from API
+            $apiGroupIds[] = $zaloGroupId;
+
+            // Ensure admin_ids is array
+            $adminIds = $groupData['admin_ids'] ?? $groupData['adminIds'] ?? [];
+            if (!is_array($adminIds)) {
+                $adminIds = [];
+            }
+
+            // Check if this is a failed group (has error or placeholder name)
+            $isFailedGroup = isset($groupData['error']) || 
+                            (isset($groupData['name']) && (
+                                $groupData['name'] === "Group {$zaloGroupId}" ||
+                                (str_starts_with($groupData['name'] ?? '', 'Group ') && strlen($groupData['name']) > 20) ||
+                                $groupData['name'] === 'Unknown Group'
+                            ));
+            
+            // Get existing group to preserve data if sync fails
+            $existingGroup = ZaloGroup::withTrashed()
+                ->where('zalo_account_id', $account->id)
+                ->where('zalo_group_id', $zaloGroupId)
+                ->first();
+            
+            // 🔥 FIX: Skip failed groups if we already have valid data in database
+            if ($isFailedGroup && $existingGroup && 
+                $existingGroup->name !== "Group {$zaloGroupId}" && 
+                $existingGroup->name !== 'Unknown Group' &&
+                !str_starts_with($existingGroup->name, 'Group ')) {
+                Log::info('[ZaloCache] Skipping failed group sync, keeping existing data', [
+                    'zalo_group_id' => $zaloGroupId,
+                    'existing_name' => $existingGroup->name,
+                    'failed_name' => $groupData['name'] ?? 'N/A',
+                    'error' => $groupData['error'] ?? 'Unknown error',
+                ]);
+                
+                // Track this group ID but don't update it
+                $apiGroupIds[] = $zaloGroupId;
+                continue;
+            }
+            
+            $groupDataNormalized = [
+                'name' => $groupData['name'] ?? $groupData['groupName'] ?? $groupData['group_name'] ?? 'Unknown Group',
+                'description' => $groupData['description'] ?? $groupData['desc'] ?? null,
+                'avatar_url' => $groupData['avatar'] ?? $groupData['avatarUrl'] ?? $groupData['avatar_url'] ?? null,
+                'members_count' => (int)($groupData['members_count'] ?? $groupData['memberCount'] ?? 0),
+                'admin_ids' => $adminIds,
+                'creator_id' => $groupData['creator_id'] ?? $groupData['creatorId'] ?? null,
+                'type' => $groupData['type'] ?? null,
+                // Store version as string to avoid integer overflow (Zalo versions are very long numbers)
+                'version' => $groupData['version'] ? (string)$groupData['version'] : null,
+                'metadata' => $groupData,
+            ];
+            
+            // 🔥 FIX: If group sync failed and we have existing data, preserve it
+            if ($isFailedGroup && $existingGroup) {
+                Log::warning('[ZaloCache] Group sync failed, preserving existing data', [
+                    'zalo_group_id' => $zaloGroupId,
+                    'existing_name' => $existingGroup->name,
+                    'failed_name' => $groupDataNormalized['name'],
+                    'error' => $groupData['error'] ?? 'Unknown error',
+                ]);
+                
+                // Preserve existing data instead of overwriting with failed data
+                $groupDataNormalized['name'] = $existingGroup->name;
+                if (empty($groupDataNormalized['avatar_url']) && $existingGroup->avatar_url) {
+                    $groupDataNormalized['avatar_url'] = $existingGroup->avatar_url;
+                }
+                if ($groupDataNormalized['members_count'] === 0 && $existingGroup->members_count > 0) {
+                    $groupDataNormalized['members_count'] = $existingGroup->members_count;
+                }
+                if (empty($groupDataNormalized['description']) && $existingGroup->description) {
+                    $groupDataNormalized['description'] = $existingGroup->description;
+                }
+                // Don't update other fields if they're empty/null and we have existing data
+                if (empty($groupDataNormalized['admin_ids']) && !empty($existingGroup->admin_ids)) {
+                    $groupDataNormalized['admin_ids'] = $existingGroup->admin_ids;
+                }
+                if (empty($groupDataNormalized['creator_id']) && $existingGroup->creator_id) {
+                    $groupDataNormalized['creator_id'] = $existingGroup->creator_id;
+                }
+            }
+
+            // Log for debugging
+            if ($index === 0) {
+                Log::info('[ZaloCache] Normalized group data', [
+                    'zalo_group_id' => $zaloGroupId,
+                    'name' => $groupDataNormalized['name'],
+                    'members_count' => $groupDataNormalized['members_count'],
+                    'admin_ids_count' => count($adminIds),
+                    'is_failed_group' => $isFailedGroup,
+                ]);
+            }
+
+            try {
+                // 🔥 CRITICAL: Add zalo_account_id and branch_id to data for INSERT
+                $groupDataNormalized['zalo_account_id'] = $account->id;
+                $groupDataNormalized['branch_id'] = $account->branch_id;
+
+                // 🔥 FIX: Check if group exists by NAME first (more reliable than zalo_group_id)
+                // zalo_group_id from API can be unreliable/changing for same group
+                $groupByName = ZaloGroup::withTrashed()
+                    ->where('zalo_account_id', $account->id)
+                    ->where('name', $groupDataNormalized['name'])
+                    ->first();
+                
+                if ($groupByName) {
+                    // Group exists by name - update it and fix zalo_group_id if changed
+                    if ($groupByName->zalo_group_id !== $zaloGroupId) {
+                        Log::warning('[ZaloCache] Group ID changed for existing group', [
+                            'group_id' => $groupByName->id,
+                            'name' => $groupByName->name,
+                            'old_zalo_group_id' => $groupByName->zalo_group_id,
+                            'new_zalo_group_id' => $zaloGroupId,
+                        ]);
+                        // Update zalo_group_id to new one
+                        $groupDataNormalized['zalo_group_id'] = $zaloGroupId;
+                    }
+                    
+                    // Update existing group
+                    $groupByName->update($groupDataNormalized);
+                    $group = $groupByName;
+                    
+                    // Restore if soft deleted
+                    if ($group->trashed()) {
+                        $group->restore();
+                        Log::info('[ZaloCache] Restored soft-deleted group by name', [
+                            'group_id' => $group->id,
+                            'name' => $group->name,
+                        ]);
+                    }
+                } else {
+                    // Group doesn't exist by name - use updateOrCreate with zalo_group_id
+                    $group = ZaloGroup::withTrashed()->updateOrCreate(
+                        [
+                            'zalo_account_id' => $account->id,
+                            'zalo_group_id' => $zaloGroupId,
+                        ],
+                        $groupDataNormalized
+                    );
+                    
+                    // Restore if soft deleted
+                    if ($group->trashed()) {
+                        $group->restore();
+                        Log::info('[ZaloCache] Restored soft-deleted group', [
+                            'group_id' => $group->id,
+                            'name' => $group->name,
+                        ]);
+                    }
+                }
+
+                if ($group->wasRecentlyCreated) {
+                    $created++;
+                    Log::info('[ZaloCache] Created group', [
+                        'group_id' => $group->id,
+                        'zalo_group_id' => $zaloGroupId,
+                        'name' => $group->name,
+                    ]);
+                } else {
+                    $updated++;
+                }
+            } catch (\Exception $createError) {
+                Log::error('[ZaloCache] Failed to create/update group', [
+                    'zalo_group_id' => $zaloGroupId,
+                    'error' => $createError->getMessage(),
+                    'trace' => $createError->getTraceAsString(),
+                    'data' => $groupDataNormalized,
+                ]);
+                // Skip this group and continue with next
+                continue;
+            }
+
+            
+            $synced++;
+
+            // 🔥 FIX: Update progress less frequently (every 20% or on completion)
+            // This reduces message flashing from ~10 times to ~5 times for 50 groups
+            $progressMilestone = max(1, (int)($totalGroups * 0.2)); // Every 20%, minimum 1
+            if ($synced % $progressMilestone === 0 || $synced === $totalGroups) {
+                $this->updateSyncProgress($account->id, 'groups', $synced, $totalGroups, 'Đang đồng bộ danh sách nhóm...');
+            }
+        }
+
+        // 🔥 NEW: Delete groups that are no longer in API response
+        // "thiếu thì thêm mà thừa thì xóa" - add missing, delete extra
+        if (!empty($apiGroupIds)) {
+            $deleted = ZaloGroup::where('zalo_account_id', $account->id)
+                ->whereNotIn('zalo_group_id', $apiGroupIds)
+                ->delete();
+        }
+
+        // Update last sync time
+        $account->update(['last_sync_at' => now()]);
+
+        // 🔥 NEW: Mark groups sync as complete
+        $this->updateSyncProgress($account->id, 'groups', $totalGroups, $totalGroups, 'Hoàn thành đồng bộ danh sách nhóm', true);
+
+        Log::info('[ZaloCache] Synced groups', [
+            'account_id' => $account->id,
+            'synced' => $synced,
+            'created' => $created,
+            'updated' => $updated,
+            'deleted' => $deleted,
+        ]);
+
+        return [
+            'synced' => $synced,
+            'created' => $created,
+            'updated' => $updated,
+            'deleted' => $deleted,
+        ];
+    }
+
+    /**
+     * Update sync progress in cache
+     */
+    private function updateSyncProgress(int $accountId, string $type, int $current, int $total, string $message, bool $completed = false): void
+    {
+        $cacheKey = "zalo_sync_progress_{$accountId}";
+        $progress = Cache::get($cacheKey, [
+            'friends' => ['current' => 0, 'total' => 0, 'percent' => 0, 'message' => '', 'completed' => false],
+            'groups' => ['current' => 0, 'total' => 0, 'percent' => 0, 'message' => '', 'completed' => false],
+        ]);
+
+        $percent = $total > 0 ? round(($current / $total) * 100) : 0;
+
+        $progress[$type] = [
+            'current' => $current,
+            'total' => $total,
+            'percent' => $percent,
+            'message' => $message,
+            'completed' => $completed,
+        ];
+
+        // Store for 5 minutes
+        Cache::put($cacheKey, $progress, 300);
+    }
+}
+

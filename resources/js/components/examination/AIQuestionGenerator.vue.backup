@@ -1,0 +1,539 @@
+<template>
+  <div class="fixed inset-0 z-50 overflow-y-auto">
+    <div class="flex items-center justify-center min-h-screen p-4">
+      <!-- Overlay -->
+      <div class="fixed inset-0 bg-black bg-opacity-50" @click="$emit('close')"></div>
+
+      <!-- Modal -->
+      <div class="relative bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+        <!-- Header -->
+        <div class="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between z-10">
+          <div>
+            <h2 class="text-lg font-semibold text-gray-800">{{ t('examination.ai.title') }}</h2>
+            <p class="text-sm text-gray-500 mt-1">{{ t('examination.ai.description') }}</p>
+          </div>
+          <button @click="$emit('close')" class="text-gray-400 hover:text-gray-600">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Form -->
+        <form @submit.prevent="generateQuestions" class="p-6 space-y-6">
+          <!-- Topic/Description -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">
+              {{ t('examination.ai.topic') }} *
+            </label>
+            <textarea
+              v-model="form.topic"
+              rows="3"
+              required
+              class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+              :placeholder="t('examination.ai.topic_placeholder')"
+            ></textarea>
+            <p class="text-xs text-gray-500 mt-1">{{ t('examination.ai.topic_description') }}</p>
+          </div>
+
+          <!-- Question Settings -->
+          <div class="grid grid-cols-2 gap-4">
+            <!-- Subject -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('examination.common.subject') }}</label>
+              <select v-model="form.subject_id" @change="onSubjectChange" class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                <option value="">{{ t('examination.common.no_select') }}</option>
+                <option v-for="subject in subjects" :key="subject.id" :value="subject.id">{{ subject.name }}</option>
+              </select>
+            </div>
+
+            <!-- Subject Category -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('examination.common.category') }}</label>
+              <select
+                v-model="form.subject_category_id"
+                :disabled="!form.subject_id || loadingCategories"
+                class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+              >
+                <option value="">{{ form.subject_id ? t('examination.common.no_select') : t('examination.common.select_subject_first') }}</option>
+                <option v-for="category in subjectCategories" :key="category.id" :value="category.id">{{ category.name }}</option>
+              </select>
+            </div>
+
+            <!-- Question Type -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('examination.ai.question_type') }} *</label>
+              <select v-model="form.type" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                <option value="">{{ t('examination.question_types.select_type') }}</option>
+                <option value="multiple_choice">{{ t('examination.question_types.multiple_choice') }}</option>
+                <option value="multiple_response">{{ t('examination.question_types.multiple_response') }}</option>
+                <option value="true_false">{{ t('examination.question_types.true_false') }}</option>
+                <option value="true_false_ng">{{ t('examination.question_types.true_false_ng') }}</option>
+                <option value="fill_blanks">{{ t('examination.question_types.fill_blanks') }}</option>
+                <option value="fill_blanks_drag">{{ t('examination.question_types.fill_blanks_drag') }}</option>
+                <option value="matching">{{ t('examination.question_types.matching') }}</option>
+                <option value="matching_headings">{{ t('examination.question_types.matching_headings') }}</option>
+                <option value="matching_features">{{ t('examination.question_types.matching_features') }}</option>
+                <option value="matching_sentence_endings">{{ t('examination.question_types.matching_sentence_endings') }}</option>
+                <option value="short_answer">{{ t('examination.question_types.short_answer') }}</option>
+                <option value="sentence_completion">{{ t('examination.question_types.sentence_completion') }}</option>
+                <option value="summary_completion">{{ t('examination.question_types.summary_completion') }}</option>
+                <option value="note_completion">{{ t('examination.question_types.note_completion') }}</option>
+                <option value="table_completion">{{ t('examination.question_types.table_completion') }}</option>
+                <option value="ordering">{{ t('examination.question_types.ordering') }}</option>
+                <option value="essay">{{ t('examination.question_types.essay') }}</option>
+                <option value="audio_response">{{ t('examination.question_types.audio_response') }}</option>
+              </select>
+            </div>
+
+            <!-- Difficulty -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('examination.ai.difficulty') }} *</label>
+              <select v-model="form.difficulty" required class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500">
+                <option value="easy">{{ t('examination.difficulty.easy') }}</option>
+                <option value="medium">{{ t('examination.difficulty.medium') }}</option>
+                <option value="hard">{{ t('examination.difficulty.hard') }}</option>
+                <option value="expert">{{ t('examination.difficulty.expert') }}</option>
+              </select>
+            </div>
+
+            <!-- Number of Questions -->
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('examination.ai.count') }} *</label>
+              <input
+                v-model.number="form.count"
+                type="number"
+                min="1"
+                max="20"
+                required
+                class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+              <p class="text-xs text-gray-500 mt-1">{{ t('examination.ai.max_questions') }}</p>
+            </div>
+          </div>
+
+          <!-- Tags Section -->
+          <div class="border-t pt-4">
+            <div class="flex items-center justify-between mb-2">
+              <label class="block text-sm font-medium text-gray-700">{{ t('examination.ai.tags') }}</label>
+              <button type="button" @click="showAddTagModal = true" class="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                {{ t('examination.ai.create_tag') }}
+              </button>
+            </div>
+
+            <!-- Selected Tags -->
+            <div class="flex flex-wrap gap-2 mb-2">
+              <div v-for="tagId in form.tag_ids" :key="tagId" class="flex items-center gap-1 bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
+                <span>{{ getTagName(tagId) }}</span>
+                <button type="button" @click="removeTag(tagId)" class="hover:text-blue-900">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <span v-if="form.tag_ids.length === 0" class="text-gray-400 text-sm">{{ t('examination.ai.no_tags') }}</span>
+            </div>
+
+            <!-- Available Tags -->
+            <div class="mt-2">
+              <p class="text-xs text-gray-500 mb-2">{{ t('examination.ai.click_to_add') }}:</p>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  v-for="tag in availableTags"
+                  :key="tag.id"
+                  type="button"
+                  @click="addTag(tag.id)"
+                  :disabled="form.tag_ids.includes(tag.id)"
+                  class="px-3 py-1 border border-gray-300 rounded-full text-sm hover:bg-blue-50 hover:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {{ tag.name }}
+                </button>
+                <span v-if="availableTags.length === 0" class="text-gray-400 text-sm">{{ t('examination.ai.no_tags_create') }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Generated Questions Preview -->
+          <div v-if="generatedQuestions.length > 0" class="border rounded-lg p-4 bg-gray-50">
+            <h3 class="font-medium text-gray-800 mb-3">{{ t('examination.ai.generated_title', { count: generatedQuestions.length }) }}</h3>
+            <div class="space-y-3 max-h-96 overflow-y-auto">
+              <div
+                v-for="(question, index) in generatedQuestions"
+                :key="index"
+                class="p-3 bg-white rounded border hover:border-blue-300 cursor-pointer"
+                :class="{ 'border-blue-500 bg-blue-50': selectedQuestions.includes(index) }"
+                @click="toggleQuestionSelection(index)"
+              >
+                <div class="flex items-start">
+                  <input
+                    type="checkbox"
+                    :checked="selectedQuestions.includes(index)"
+                    class="mt-1 mr-3"
+                    @click.stop="toggleQuestionSelection(index)"
+                  />
+                  <div class="flex-1">
+                    <p class="font-medium text-gray-800">{{ index + 1 }}. {{ question.title }}</p>
+                    <div v-if="question.options" class="mt-2 ml-4 text-sm space-y-1">
+                      <div v-for="(option, optIdx) in question.options" :key="optIdx" class="flex items-center">
+                        <span :class="{ 'text-green-600 font-medium': option.is_correct }">
+                          {{ String.fromCharCode(65 + optIdx) }}. {{ option.text }}
+                          <span v-if="option.is_correct" class="ml-1">✓</span>
+                        </span>
+                      </div>
+                    </div>
+                    <p v-if="question.explanation" class="mt-2 text-xs text-gray-600 italic">
+                      {{ question.explanation }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="mt-3 flex justify-between items-center">
+              <button
+                type="button"
+                @click="selectAllQuestions"
+                class="text-sm text-blue-600 hover:text-blue-800"
+              >
+                {{ selectedQuestions.length === generatedQuestions.length ? t('examination.common.deselect_all') : t('examination.ai.select_all') }}
+              </button>
+              <span class="text-sm text-gray-600">{{ selectedQuestions.length }} {{ t('examination.common.selected') }}</span>
+            </div>
+          </div>
+
+          <!-- Loading State -->
+          <div v-if="generating" class="flex items-center justify-center py-8">
+            <div class="text-center">
+              <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+              <p class="mt-4 text-gray-600">{{ t('examination.ai.generating') }}...</p>
+              <p class="mt-1 text-sm text-gray-500">{{ t('examination.ai.generating_wait') }}</p>
+            </div>
+          </div>
+
+          <!-- Error Message -->
+          <div v-if="errorMessage" class="p-4 bg-red-50 border border-red-200 rounded-lg">
+            <p class="text-red-800 text-sm">{{ errorMessage }}</p>
+          </div>
+
+          <!-- Footer -->
+          <div class="flex justify-end gap-3 pt-4 border-t">
+            <button
+              type="button"
+              @click="$emit('close')"
+              class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+            >
+              {{ t('examination.common.cancel') }}
+            </button>
+            <button
+              v-if="generatedQuestions.length === 0"
+              type="submit"
+              :disabled="generating"
+              class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {{ generating ? t('examination.ai.generating') + '...' : t('examination.ai.generate') }}
+            </button>
+            <button
+              v-else
+              type="button"
+              @click="saveSelectedQuestions"
+              :disabled="selectedQuestions.length === 0 || saving"
+              class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {{ saving ? t('examination.common.saving') + '...' : t('examination.ai.save_selected', { count: selectedQuestions.length }) }}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Add Tag Modal -->
+    <div v-if="showAddTagModal" class="fixed inset-0 z-50 flex items-center justify-center">
+      <div class="fixed inset-0 bg-black bg-opacity-50" @click="showAddTagModal = false"></div>
+      <div class="relative bg-white rounded-lg shadow-xl p-6 w-full max-w-md max-h-[80vh] overflow-y-auto">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">{{ t('examination.ai.manage_tags') }}</h3>
+
+        <!-- My Tags Section -->
+        <div class="mb-4">
+          <h4 class="text-sm font-medium text-gray-700 mb-2">{{ t('examination.ai.my_tags') }}</h4>
+          <div v-if="myTags.length > 0" class="space-y-2 max-h-48 overflow-y-auto border rounded-lg p-3 bg-gray-50">
+            <div v-for="tag in myTags" :key="tag.id"
+                 class="flex items-center justify-between p-2 bg-white rounded hover:bg-blue-50">
+              <span class="text-sm text-gray-800">{{ tag.name }}</span>
+              <button type="button" @click="deleteTag(tag.id)" :disabled="deletingTagId === tag.id"
+                      class="text-red-600 hover:text-red-800 disabled:opacity-50">
+                <svg v-if="deletingTagId === tag.id" class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          <p v-else class="text-sm text-gray-500 italic">{{ t('examination.ai.no_created_tags') }}</p>
+        </div>
+
+        <!-- Create New Tag Form -->
+        <div class="mb-4">
+          <h4 class="text-sm font-medium text-gray-700 mb-2">{{ t('examination.ai.create_tag') }}</h4>
+          <form @submit.prevent="createTag">
+            <div class="mb-3">
+              <label class="block text-sm font-medium text-gray-700 mb-1">{{ t('examination.ai.tag_name') }} *</label>
+              <input v-model="newTagName" type="text" required
+                     class="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                     :placeholder="t('examination.ai.tag_placeholder')" />
+            </div>
+            <div class="flex gap-2">
+              <button type="button" @click="showAddTagModal = false"
+                      class="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
+                {{ t('examination.common.close') }}
+              </button>
+              <button type="submit" :disabled="creatingTag"
+                      class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                {{ creatingTag ? t('examination.ai.creating_tag') + '...' : t('examination.ai.create_tag') }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import { useI18n } from '@/composables/useI18n'
+import api from '@/api'
+
+const { t } = useI18n()
+
+const props = defineProps({
+  subjects: {
+    type: Array,
+    default: () => []
+  }
+})
+
+const emit = defineEmits(['close', 'saved'])
+
+const form = ref({
+  topic: '',
+  subject_id: '',
+  subject_category_id: '',
+  skill: 'general',
+  type: '',
+  difficulty: 'medium',
+  count: 5,
+  tag_ids: []
+})
+
+const generating = ref(false)
+const saving = ref(false)
+const loadingCategories = ref(false)
+const errorMessage = ref('')
+const generatedQuestions = ref([])
+const selectedQuestions = ref([])
+const subjectCategories = ref([])
+const tags = ref([])
+const showAddTagModal = ref(false)
+const newTagName = ref('')
+const creatingTag = ref(false)
+const deletingTagId = ref(null)
+
+// Fetch tags on mount
+onMounted(async () => {
+  await fetchTags()
+})
+
+async function generateQuestions() {
+  generating.value = true
+  errorMessage.value = ''
+
+  try {
+    const response = await api.post('/examination/generate-questions', form.value)
+
+    if (response.data.success) {
+      generatedQuestions.value = response.data.questions
+      // Select all questions by default
+      selectedQuestions.value = generatedQuestions.value.map((_, index) => index)
+    } else {
+      errorMessage.value = response.data.message || t('examination.messages.error_generating')
+    }
+  } catch (error) {
+    console.error('Error generating questions:', error)
+    errorMessage.value = error.response?.data?.message || t('examination.messages.error_ai_connection')
+  } finally {
+    generating.value = false
+  }
+}
+
+function toggleQuestionSelection(index) {
+  const idx = selectedQuestions.value.indexOf(index)
+  if (idx > -1) {
+    selectedQuestions.value.splice(idx, 1)
+  } else {
+    selectedQuestions.value.push(index)
+  }
+}
+
+function selectAllQuestions() {
+  if (selectedQuestions.value.length === generatedQuestions.value.length) {
+    selectedQuestions.value = []
+  } else {
+    selectedQuestions.value = generatedQuestions.value.map((_, index) => index)
+  }
+}
+
+async function onSubjectChange() {
+  form.value.subject_category_id = ''
+  subjectCategories.value = []
+
+  if (!form.value.subject_id) return
+
+  loadingCategories.value = true
+  try {
+    const response = await api.get(`/examination/subjects/${form.value.subject_id}/categories`)
+    subjectCategories.value = response.data.data || []
+  } catch (error) {
+    console.error('Error fetching categories:', error)
+  } finally {
+    loadingCategories.value = false
+  }
+}
+
+// Tag-related functions
+async function fetchTags() {
+  try {
+    const response = await api.get('/examination/question-tags')
+    tags.value = response.data.data || []
+  } catch (error) {
+    console.error('Error fetching tags:', error)
+  }
+}
+
+const availableTags = computed(() => {
+  return tags.value.filter(tag => !form.value.tag_ids.includes(tag.id))
+})
+
+const myTags = computed(() => {
+  return tags.value.filter(tag => tag.can_delete === true)
+})
+
+function getTagName(tagId) {
+  const tag = tags.value.find(t => t.id === tagId)
+  return tag ? tag.name : ''
+}
+
+function addTag(tagId) {
+  if (!form.value.tag_ids.includes(tagId)) {
+    form.value.tag_ids.push(tagId)
+  }
+}
+
+function removeTag(tagId) {
+  const index = form.value.tag_ids.indexOf(tagId)
+  if (index > -1) {
+    form.value.tag_ids.splice(index, 1)
+  }
+}
+
+async function createTag() {
+  if (!newTagName.value.trim()) return
+
+  creatingTag.value = true
+  try {
+    const response = await api.post('/examination/question-tags', {
+      name: newTagName.value.trim()
+    })
+
+    const newTag = response.data.data
+    tags.value.push(newTag)
+    form.value.tag_ids.push(newTag.id)
+
+    newTagName.value = ''
+    showAddTagModal.value = false
+  } catch (error) {
+    console.error('Error creating tag:', error)
+    alert(t('examination.messages.cannot_create_tag') + ': ' + (error.response?.data?.message || error.message))
+  } finally {
+    creatingTag.value = false
+  }
+}
+
+async function deleteTag(tagId) {
+  if (!confirm(t('examination.messages.delete_tag_confirm'))) return
+
+  deletingTagId.value = tagId
+  try {
+    await api.delete(`/examination/question-tags/${tagId}`)
+
+    // Remove from tags list
+    const index = tags.value.findIndex(t => t.id === tagId)
+    if (index > -1) {
+      tags.value.splice(index, 1)
+    }
+
+    // Remove from selected tags if it was selected
+    removeTag(tagId)
+  } catch (error) {
+    console.error('Error deleting tag:', error)
+    alert(t('examination.messages.cannot_delete_tag') + ': ' + (error.response?.data?.message || error.message))
+  } finally {
+    deletingTagId.value = null
+  }
+}
+
+async function saveSelectedQuestions() {
+  if (selectedQuestions.value.length === 0) return
+
+  saving.value = true
+  errorMessage.value = ''
+
+  try {
+    const questionsToSave = selectedQuestions.value.map(index => {
+      const question = generatedQuestions.value[index]
+      return {
+        type: form.value.type,
+        difficulty: form.value.difficulty,
+        skill: form.value.skill,
+        title: question.title,
+        content: question.content || null,
+        explanation: question.explanation || null,
+        subject_id: form.value.subject_id || null,
+        subject_category_id: form.value.subject_category_id || null,
+        status: 'draft',
+        points: 1,
+        tag_ids: form.value.tag_ids || [],
+        options: question.options?.map((opt, idx) => ({
+          content: opt.text,
+          is_correct: opt.is_correct,
+          feedback: null
+        })) || null,
+        matching_pairs: question.matching_pairs || null,
+        blank_answers: question.blank_answers || null,
+        sample_answer: question.sample_answer || null
+      }
+    })
+
+    // Import questions using the existing import endpoint
+    const response = await api.post('/examination/questions/import', {
+      questions: questionsToSave
+    })
+
+    if (response.data.success) {
+      emit('saved')
+      emit('close')
+    } else {
+      errorMessage.value = response.data.message || 'Có lỗi xảy ra khi lưu câu hỏi'
+    }
+  } catch (error) {
+    console.error('Error saving questions:', error)
+    errorMessage.value = error.response?.data?.message || 'Không thể lưu câu hỏi. Vui lòng thử lại.'
+  } finally {
+    saving.value = false
+  }
+}
+</script>

@@ -1,0 +1,82 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
+
+class ZaloFriend extends Model
+{
+    use SoftDeletes;
+
+    protected $fillable = [
+        'zalo_id',
+        'zalo_user_id',
+        'name',
+        'phone',
+        'avatar_url',
+        'avatar_path',
+        'bio',
+        'metadata',
+        'last_seen_at',
+    ];
+
+    protected $casts = [
+        'metadata' => 'array',
+        'last_seen_at' => 'datetime',
+    ];
+
+    // Relationships
+
+    /**
+     * Many-to-Many relationship with branches through pivot table
+     * One friend can be assigned to multiple branches
+     */
+    public function branches()
+    {
+        return $this->belongsToMany(Branch::class, 'zalo_friend_branches', 'zalo_friend_id', 'branch_id')
+                    ->withPivot('department_id', 'assigned_by', 'assigned_at')
+                    ->withTimestamps();
+    }
+
+    // Scopes
+
+    /**
+     * Scope: Friends for a specific Zalo account (by zalo_id)
+     */
+    public function scopeForAccount($query, $zaloId)
+    {
+        return $query->where('zalo_id', $zaloId);
+    }
+
+    /**
+     * Scope: Friends assigned to a specific branch (via pivot table)
+     */
+    public function scopeForBranch($query, $branchId)
+    {
+        if (!$branchId) {
+            return $query;
+        }
+
+        return $query->where(function($q) use ($branchId) {
+            // Friends assigned to this branch OR global friends (no assignments)
+            $q->whereHas('branches', function($subQ) use ($branchId) {
+                $subQ->where('branch_id', $branchId);
+            })->orWhereDoesntHave('branches'); // Include global friends
+        });
+    }
+
+    /**
+     * Scope: Friends assigned to a specific department (via pivot table)
+     */
+    public function scopeForDepartment($query, $departmentId)
+    {
+        if (!$departmentId) {
+            return $query;
+        }
+
+        return $query->whereHas('branches', function($subQ) use ($departmentId) {
+            $subQ->where('department_id', $departmentId);
+        });
+    }
+}

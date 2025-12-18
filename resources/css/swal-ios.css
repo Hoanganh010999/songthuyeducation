@@ -1,0 +1,367 @@
+/* ========================================
+   SweetAlert2 iOS/macOS Style
+   Clean, minimalist, elegant
+   ======================================== */
+
+/* Popup Container */
+.ios-popup {
+    border-radius: 14px !important;
+    padding: 0 !important;
+    width: 270px !important;
+    background: rgba(255, 255, 255, 0.95) !important;
+    backdrop-filter: blur(20px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3) !important;
+    border: 0.5px solid rgba(0, 0, 0, 0.04) !important;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+    .ios-popup {
+        background: rgba(28, 28, 30, 0.95) !important;
+        border: 0.5px solid rgba(255, 255, 255, 0.1) !important;
+    }
+}
+
+/* Icon */
+.ios-popup .swal2-icon {
+    margin: 24px auto 16px !important;
+    width: 60px !important;
+    height: 60px !important;
+    border-width: 3px !important;
+}
+
+/* Success Icon - Checkmark (dấu tick V) */
+.ios-popup .swal2-icon.swal2-success {
+    border-color: #34C759 !important;
+}
+
+.ios-popup .swal2-icon.swal2-success .swal2-success-ring {
+    border-color: rgba(52, 199, 89, 0.3) !important;
+}
+
+/* Success checkmark lines - CRITICAL: Đảm bảo dấu V hiển thị đúng */
+.ios-popup .swal2-icon.swal2-success [class^='swal2-success-line'],
+.ios-popup .swal2-icon.swal2-success .swal2-success-line-tip,
+.ios-popup .swal2-icon.swal2-success .swal2-success-line-long {
+    background-color: #34C759 !important;
+    height: 3px !important;
+    border-radius: 2px !important;
+    display: block !important;
+    position: absolute !important;
+}
+
+.ios-popup .swal2-icon.swal2-success .swal2-success-line-tip {
+    width: 25px !important;
+    left: 14px !important;
+    top: 31px !important;
+    transform: rotate(45deg) !important;
+    transform-origin: left bottom !important;
+}
+
+.ios-popup .swal2-icon.swal2-success .swal2-success-line-long {
+    width: 35px !important;
+    right: 8px !important;
+    top: 27px !important;
+    transform: rotate(-45deg) !important;
+    transform-origin: right bottom !important;
+}
+
+/* Fix: Đảm bảo không bị nhầm với X mark */
+.ios-popup .swal2-icon.swal2-success .swal2-success-circular-line-left,
+.ios-popup .swal2-icon.swal2-success .swal2-success-circular-line-right {
+    background-color: transparent !important;
+}
+
+.ios-popup .swal2-icon.swal2-success .swal2-success-fix {
+    background-color: transparent !important;
+}
+
+/* Error Icon - X mark */
+.ios-popup .swal2-icon.swal2-error {
+    border-color: #FF3B30 !important;
+}
+
+.ios-popup .swal2-icon.swal2-error [class^='swal2-x-mark-line'] {
+    background-color: #FF3B30 !important;
+    height: 3px !important;
+}
+
+.ios-popup .swal2-icon.swal2-error .swal2-x-mark-line-left {
+    width: 35px !important;
+    left: 13px !important;
+    top: 28px !important;
+}
+
+.ios-popup .swal2-icon.swal2-error .swal2-x-mark-line-right {
+    width: 35px !important;
+    right: 13px !important;
+    top: 28px !important;
+}
+
+.ios-popup .swal2-icon.swal2-warning {
+    border-color: #FF9500 !important;
+    color: #FF9500 !important;
+}
+
+.ios-popup .swal2-icon.swal2-info {
+    border-color: #007AFF !important;
+    color: #007AFF !important;
+}
+
+.ios-popup .swal2-icon.swal2-question {
+    border-color: #007AFF !important;
+    color: #007AFF !important;
+}
+
+/* Title */
+.ios-title {
+    padding: 0 24px !important;
+    margin: 0 0 8px !important;
+    font-size: 17px !important;
+    font-weight: 600 !important;
+    color: #000000 !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif !important;
+    letter-spacing: -0.4px !important;
+}
+
+@media (prefers-color-scheme: dark) {
+    .ios-title {
+        color: #FFFFFF !important;
+    }
+}
+
+/* Text Content */
+.ios-text {
+    padding: 0 24px 24px !important;
+    margin: 0 !important;
+    font-size: 13px !important;
+    font-weight: 400 !important;
+    color: #000000 !important;
+    line-height: 1.4 !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif !important;
+}
+
+@media (prefers-color-scheme: dark) {
+    .ios-text {
+        color: rgba(255, 255, 255, 0.85) !important;
+    }
+}
+
+/* Actions Container */
+.ios-actions {
+    margin: 0 !important;
+    padding: 0 !important;
+    border-top: 0.5px solid rgba(0, 0, 0, 0.1) !important;
+    display: flex !important;
+    flex-direction: row !important;
+}
+
+@media (prefers-color-scheme: dark) {
+    .ios-actions {
+        border-top-color: rgba(255, 255, 255, 0.1) !important;
+    }
+}
+
+/* Buttons */
+.ios-button {
+    flex: 1 !important;
+    margin: 0 !important;
+    padding: 12px 16px !important;
+    border: none !important;
+    border-radius: 0 !important;
+    font-size: 17px !important;
+    font-weight: 400 !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif !important;
+    cursor: pointer !important;
+    transition: background-color 0.15s ease !important;
+    background: transparent !important;
+    letter-spacing: -0.4px !important;
+}
+
+.ios-button:active {
+    background: rgba(0, 0, 0, 0.05) !important;
+}
+
+@media (prefers-color-scheme: dark) {
+    .ios-button:active {
+        background: rgba(255, 255, 255, 0.1) !important;
+    }
+}
+
+/* Confirm Button */
+.ios-button-confirm {
+    color: #007AFF !important;
+    font-weight: 600 !important;
+}
+
+.ios-button-confirm:hover {
+    background: rgba(0, 122, 255, 0.05) !important;
+}
+
+/* Cancel Button */
+.ios-button-cancel {
+    color: #007AFF !important;
+    border-right: 0.5px solid rgba(0, 0, 0, 0.1) !important;
+}
+
+@media (prefers-color-scheme: dark) {
+    .ios-button-cancel {
+        border-right-color: rgba(255, 255, 255, 0.1) !important;
+    }
+}
+
+.ios-button-cancel:hover {
+    background: rgba(0, 0, 0, 0.03) !important;
+}
+
+@media (prefers-color-scheme: dark) {
+    .ios-button-cancel:hover {
+        background: rgba(255, 255, 255, 0.05) !important;
+    }
+}
+
+/* Delete/Destructive Button */
+.swal2-confirm.ios-button-confirm:has-text("Delete"),
+.swal2-confirm.ios-button-confirm:has-text("Xóa") {
+    color: #FF3B30 !important;
+}
+
+/* Timer Progress Bar */
+.ios-popup .swal2-timer-progress-bar {
+    background: rgba(0, 122, 255, 0.5) !important;
+    height: 3px !important;
+}
+
+/* Animation */
+.ios-show {
+    animation: iosSlideIn 0.3s cubic-bezier(0.36, 0.66, 0.04, 1) !important;
+}
+
+.ios-hide {
+    animation: iosSlideOut 0.2s cubic-bezier(0.36, 0.66, 0.04, 1) !important;
+}
+
+@keyframes iosSlideIn {
+    from {
+        opacity: 0;
+        transform: scale(1.1) translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+@keyframes iosSlideOut {
+    from {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+    to {
+        opacity: 0;
+        transform: scale(0.95) translateY(10px);
+    }
+}
+
+/* Toast Notification (iOS style) */
+.swal2-toast.ios-popup {
+    width: auto !important;
+    min-width: 250px !important;
+    max-width: 350px !important;
+    padding: 12px 16px !important;
+    border-radius: 12px !important;
+}
+
+.swal2-toast .ios-title {
+    padding: 0 !important;
+    margin: 0 !important;
+    font-size: 15px !important;
+}
+
+/* Loading State */
+.ios-popup .swal2-loader {
+    border-color: #007AFF transparent #007AFF transparent !important;
+}
+
+/* Input Fields (if used) */
+.ios-popup .swal2-input {
+    border: 1px solid rgba(0, 0, 0, 0.1) !important;
+    border-radius: 8px !important;
+    padding: 10px 12px !important;
+    font-size: 15px !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif !important;
+}
+
+@media (prefers-color-scheme: dark) {
+    .ios-popup .swal2-input {
+        background: rgba(255, 255, 255, 0.1) !important;
+        border-color: rgba(255, 255, 255, 0.2) !important;
+        color: #FFFFFF !important;
+    }
+}
+
+.ios-popup .swal2-input:focus {
+    border-color: #007AFF !important;
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1) !important;
+}
+
+/* Validation Message */
+.ios-popup .swal2-validation-message {
+    background: rgba(255, 59, 48, 0.1) !important;
+    border: 1px solid rgba(255, 59, 48, 0.3) !important;
+    border-radius: 8px !important;
+    color: #FF3B30 !important;
+    font-size: 13px !important;
+    padding: 8px 12px !important;
+    margin: 8px 0 !important;
+}
+
+/* Close Button */
+.ios-popup .swal2-close {
+    color: rgba(0, 0, 0, 0.4) !important;
+    font-size: 28px !important;
+    font-weight: 300 !important;
+    top: 8px !important;
+    right: 8px !important;
+}
+
+@media (prefers-color-scheme: dark) {
+    .ios-popup .swal2-close {
+        color: rgba(255, 255, 255, 0.6) !important;
+    }
+}
+
+.ios-popup .swal2-close:hover {
+    color: rgba(0, 0, 0, 0.7) !important;
+}
+
+@media (prefers-color-scheme: dark) {
+    .ios-popup .swal2-close:hover {
+        color: rgba(255, 255, 255, 0.9) !important;
+    }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .ios-popup {
+        width: 90% !important;
+        max-width: 320px !important;
+    }
+}
+
+/* macOS specific adjustments */
+@media (min-width: 1024px) {
+    .ios-popup {
+        width: 320px !important;
+    }
+    
+    .ios-title {
+        font-size: 18px !important;
+    }
+    
+    .ios-text {
+        font-size: 14px !important;
+    }
+}
+

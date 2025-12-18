@@ -1,0 +1,2026 @@
+const { Zalo } = require('zalo-api-final');
+const fs = require('fs');
+const path = require('path');
+const http = require('http');
+
+let zaloClient = null;
+let isInitialized = false;
+let loginInProgress = false;
+let loginCompleted = false;
+let keepAliveInterval = null;
+const KEEP_ALIVE_INTERVAL = 45000; // 45 seconds (Zalo timeout is usually 60 seconds)
+let wsListener = null; // WebSocket listener to maintain connection
+let restartTimeout = null; // Timeout for restarting listener (debounce)
+let isRestarting = false; // Flag to prevent multiple simultaneous restarts
+
+/**
+ * Initialize Zalo API client with QR Code login
+ */
+async function initializeZalo(qrCallback, forceNew = false) {
+  try {
+    // If already initialized and login completed, return existing API instance
+    // UNLESS forceNew is true (for adding new account)
+    if (!forceNew && isInitialized && loginCompleted && zaloClient) {
+      console.log('✅ Using existing API instance');
+      // Verify it's an API instance (has getAllFriends method)
+      if (typeof zaloClient.getAllFriends === 'function') {
+        // If callback provided but we're using existing instance, return null for QR
+        // This indicates we should use existing session, not create new QR
+        if (qrCallback && typeof qrCallback === 'function') {
+          console.log('⚠️  Already logged in, cannot generate new QR code');
+          console.log('   Use forceNew=true to create new account');
+          // Don't call callback - let caller know no QR is available
+        }
+        return zaloClient;
+      } else {
+        console.log('⚠️  Existing client is not API instance, reinitializing...');
+        isInitialized = false;
+        loginCompleted = false;
+        zaloClient = null;
+      }
+    }
+    
+    // If forceNew, reset state to allow new login
+    if (forceNew) {
+      console.log('🔄 Force new login requested, resetting state...');
+      isInitialized = false;
+      loginCompleted = false;
+      loginInProgress = false;
+      // CRITICAL: Clear environment variables to force QR login
+      // This ensures we don't try to use expired/invalid cookies
+      const oldCookie = process.env.ZALO_COOKIE;
+      process.env.ZALO_COOKIE = '';
+      console.log('   🧹 Cleared ZALO_COOKIE to force QR login');
+      console.log('   Old cookie length:', oldCookie ? oldCookie.length : 0);
+      // Don't clear zaloClient yet - will be replaced by new instance
+    }
+
+    console.log('🔧 Creating new Zalo client...');
+    // Enable selfListen to receive messages from same account (other devices)
+    // This is CRITICAL for receiving messages sent from phone/other devices
+    zaloClient = new Zalo({
+      cookie: process.env.ZALO_COOKIE || '',
+      imei: process.env.ZALO_IMEI || '',
+      userAgent: process.env.ZALO_USER_AGENT || '',
+      selfListen: true, // Enable receiving messages from same account (other devices)
+    });
+    console.log('   ✅ selfListen enabled - will receive messages from other devices');
+
+    // If no credentials OR forceNew is true, use QR login
+    // forceNew means we want a fresh login, so ignore existing cookie
+    if (forceNew || !process.env.ZALO_COOKIE || process.env.ZALO_COOKIE === '') {
+      console.log('🔐 Initiating QR Code login...');
+      
+      // Reset login state
+      loginInProgress = true;
+      loginCompleted = false;
+      
+      const qrFilePath = path.join(__dirname, '..', 'qr.png');
+      
+      // Clean up old QR file if exists
+      try {
+        if (fs.existsSync(qrFilePath)) {
+          fs.unlinkSync(qrFilePath);
+          console.log('🧹 Cleaned up old QR file');
+        }
+      } catch (error) {
+        console.log('⚠️  Could not delete old QR file:', error.message);
+      }
+      
+      let qrCodeString = null;
+      let qrReceived = false;
+      let qrBase64 = null;
+      
+      // Start login process - try callback first
+      console.log('📞 Starting loginQR with callback...');
+      console.log('   QR file expected at:', path.resolve(qrFilePath));
+      console.log('   Current working directory:', process.cwd());
+      console.log('   __dirname:', __dirname);
+      
+      // loginQR() returns Promise<API> - the API instance has all the methods
+      const loginPromise = zaloClient.loginQR((qr) => {
+        console.log('📱 QR Code callback received!');
+        console.log('   QR type:', typeof qr);
+        console.log('   QR length:', qr ? qr.length : 0);
+        console.log('   QR preview:', qr ? (qr.substring(0, 50) + '...') : 'null');
+        
+        qrCodeString = qr;
+        qrReceived = true;
+        
+        // Convert QR string to base64 image data URL
+        if (qr && qr.startsWith('data:')) {
+          qrBase64 = qr;
+          console.log('   ✅ QR is already a data URL');
+        } else if (qr) {
+          qrBase64 = `data:image/png;base64,${qr}`;
+          console.log('   ✅ QR converted to data URL');
+        } else {
+          console.log('   ⚠️  QR is null or empty');
+        }
+        
+        // Call custom callback if provided
+        if (qrCallback && typeof qrCallback === 'function') {
+          console.log('📤 Calling custom QR callback with callback data...');
+          qrCallback(qrBase64);
+        }
+      });
+      
+      // Handle login completion (after QR scan)
+      // loginQR() returns API instance, not Zalo instance!
+      loginPromise.then(async (apiInstance) => {
+        console.log('\n✅✅✅ QR login successful! Promise resolved!');
+        console.log('   This means QR was scanned and login completed!');
+        console.log('   Received API instance (not Zalo instance)');
+        
+        // IMPORTANT: Replace zaloClient with API instance
+        // API instance has getAllFriends(), getAllGroups(), etc.
+        zaloClient = apiInstance;
+        console.log('   ✅ zaloClient replaced with API instance');
+        console.log('   API instance methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(apiInstance))
+          .filter(name => typeof apiInstance[name] === 'function')
+          .slice(0, 10)
+          .join(', '), '...');
+        
+        // Try to get and save credentials (async, don't wait)
+        // This runs in background so it doesn't block WebSocket listener startup
+        (async () => {
+          try {
+            if (typeof apiInstance.getCookie === 'function') {
+              const cookie = await apiInstance.getCookie();
+              if (cookie && cookie.cookies) {
+                // Save credentials to .env
+                await saveCredentialsToEnv(cookie);
+                
+                // Try to extract and save zalo_id from cookie
+                try {
+                  let zaloId = null;
+                  
+                  // Method 1: Parse cookies array (tough-cookie format)
+                  if (cookie.cookies && Array.isArray(cookie.cookies)) {
+                    console.log('   🔍 Parsing cookies array (', cookie.cookies.length, 'cookies)...');
+                    
+                    // Look through each cookie
+                    for (const cookieItem of cookie.cookies) {
+                      if (cookieItem && typeof cookieItem === 'object') {
+                        const cookieKey = cookieItem.key || cookieItem.name || '';
+                        const cookieValue = cookieItem.value || '';
+                        
+                        // Check if cookie value is a long numeric ID (likely user ID)
+                        if (cookieValue && /^\d{15,}$/.test(cookieValue)) {
+                          zaloId = cookieValue;
+                          console.log(`   ✅ Found zalo_id in cookie ${cookieKey}:`, zaloId);
+                          break;
+                        }
+                        
+                        // Check if cookie key suggests user ID
+                        if (cookieKey && /uid|userId|zaloId|user_id/i.test(cookieKey)) {
+                          if (cookieValue && /^\d+$/.test(cookieValue) && cookieValue.length >= 10) {
+                            zaloId = cookieValue;
+                            console.log(`   ✅ Found zalo_id in cookie ${cookieKey}:`, zaloId);
+                            break;
+                          }
+                        }
+                      }
+                    }
+                    
+                    // If not found, search in all cookie values
+                    if (!zaloId) {
+                      const allValues = cookie.cookies
+                        .map(c => c && typeof c === 'object' ? (c.value || '') : '')
+                        .join(' ');
+                      
+                      const longIdMatch = allValues.match(/(\d{15,})/g);
+                      if (longIdMatch && longIdMatch.length > 0) {
+                        // Take the longest match
+                        zaloId = longIdMatch.sort((a, b) => b.length - a.length)[0];
+                        console.log('   ✅ Found zalo_id in cookie values:', zaloId);
+                      }
+                    }
+                  }
+                  
+                  // Method 2: Try to extract from cookie JSON string (fallback)
+                  if (!zaloId) {
+                    const cookieStr = JSON.stringify(cookie.cookies);
+                    console.log('   🔍 Fallback: Searching in cookie JSON string (length:', cookieStr.length, ')');
+                    
+                    const patterns = [
+                      /"uid":\s*"?(\d{15,})"?/i,
+                      /"userId":\s*"?(\d{15,})"?/i,
+                      /"zaloId":\s*"?(\d{15,})"?/i,
+                      /uid[=:]\s*"?(\d{15,})"?/i,
+                      /userId[=:]\s*"?(\d{15,})"?/i,
+                      /zaloId[=:]\s*"?(\d{15,})"?/i,
+                      /"id":\s*"?(\d{15,})"?/i,
+                      /(\d{15,})/g,
+                    ];
+                    
+                    for (const pattern of patterns) {
+                      const match = cookieStr.match(pattern);
+                      if (match && match[1] && match[1].length >= 10) {
+                        zaloId = match[1];
+                        console.log('   ✅ Zalo ID extracted with pattern:', pattern.toString());
+                        break;
+                      }
+                    }
+                  }
+                  
+                  // Method 3: Try to get from API instance context or properties
+                  if (!zaloId) {
+                    try {
+                      // Check if API instance has uid or userId property
+                      if (apiInstance.uid) {
+                        zaloId = String(apiInstance.uid);
+                        console.log('   ✅ Zalo ID from API instance.uid');
+                      } else if (apiInstance.userId) {
+                        zaloId = String(apiInstance.userId);
+                        console.log('   ✅ Zalo ID from API instance.userId');
+                      } else if (apiInstance.context && apiInstance.context.uid) {
+                        zaloId = String(apiInstance.context.uid);
+                        console.log('   ✅ Zalo ID from API instance.context.uid');
+                      }
+                    } catch (e) {
+                      console.log('   ⚠️  Could not get zalo_id from API instance:', e.message);
+                    }
+                  }
+                  
+                  // Method 4: Try to get from getAllFriends as last resort
+                  // Use first friend's userId as temporary zalo_id
+                  if (!zaloId) {
+                    try {
+                      if (typeof apiInstance.getAllFriends === 'function') {
+                        console.log('   🔍 Last resort: Trying to get from friends list...');
+                        const friends = await apiInstance.getAllFriends();
+                        
+                        if (friends && Array.isArray(friends) && friends.length > 0) {
+                          const firstFriend = friends[0];
+                          const friendUserId = firstFriend.userId || firstFriend.id || firstFriend.uid;
+                          
+                          if (friendUserId && String(friendUserId).length >= 10) {
+                            zaloId = String(friendUserId);
+                            console.log('   ⚠️  Using friend userId as temporary zalo_id:', zaloId);
+                            console.log('   ⚠️  This should be updated with actual user ID when available');
+                          }
+                        }
+                      }
+                    } catch (e) {
+                      console.log('   ⚠️  Could not get zalo_id from friends:', e.message);
+                    }
+                  }
+                  
+                  if (zaloId) {
+                    process.env.ZALO_USER_ID = zaloId;
+                    console.log('   💾 Zalo ID saved to env:', zaloId);
+                    
+                    // Also save to .env file
+                    const envPath = path.join(__dirname, '..', '.env');
+                    if (fs.existsSync(envPath)) {
+                      let envContent = fs.readFileSync(envPath, 'utf8');
+                      const lines = envContent.split('\n');
+                      const updatedLines = [];
+                      let zaloIdFound = false;
+                      
+                      for (const line of lines) {
+                        if (line.startsWith('ZALO_USER_ID=')) {
+                          updatedLines.push(`ZALO_USER_ID=${zaloId}`);
+                          zaloIdFound = true;
+                        } else {
+                          updatedLines.push(line);
+                        }
+                      }
+                      
+                      if (!zaloIdFound) {
+                        updatedLines.push(`ZALO_USER_ID=${zaloId}`);
+                      }
+                      
+                      fs.writeFileSync(envPath, updatedLines.join('\n'), 'utf8');
+                      console.log('   💾 Zalo ID saved to .env file');
+                    }
+                  } else {
+                    console.log('   ⚠️  Could not extract zalo_id from any source');
+                    console.log('   ⚠️  Account will need to be saved manually or zalo_id provided');
+                  }
+                } catch (extractError) {
+                  console.log('   ⚠️  Could not extract zalo_id from cookie:', extractError.message);
+                  if (extractError.stack) {
+                    console.log('   Stack:', extractError.stack);
+                  }
+                }
+              }
+            }
+          } catch (error) {
+            console.log('⚠️  Could not get credentials to save:', error.message);
+          }
+        })();
+        
+        // Clean up QR file
+        try {
+          if (fs.existsSync(qrFilePath)) {
+            fs.unlinkSync(qrFilePath);
+            console.log('🧹 Cleaned up QR file after login');
+          }
+        } catch (error) {
+          console.log('⚠️  Could not delete QR file:', error.message);
+        }
+        
+        // Mark login as completed
+        loginCompleted = true;
+        loginInProgress = false;
+        isInitialized = true;
+        
+        console.log('✅ Zalo client is now ready!');
+        console.log('📊 Status: isInitialized=' + isInitialized + ', loginCompleted=' + loginCompleted);
+        
+        // Try to get and set ZALO_USER_ID using getOwnId()
+        try {
+          if (typeof apiInstance.getOwnId === 'function') {
+            const ownId = await apiInstance.getOwnId();
+            if (ownId) {
+              process.env.ZALO_USER_ID = String(ownId);
+              console.log('   ✅ ZALO_USER_ID set from getOwnId():', process.env.ZALO_USER_ID);
+              
+              // Also save to .env file
+              const envPath = path.join(__dirname, '..', '.env');
+              if (fs.existsSync(envPath)) {
+                let envContent = fs.readFileSync(envPath, 'utf8');
+                const lines = envContent.split('\n');
+                const updatedLines = [];
+                let zaloIdFound = false;
+                
+                for (const line of lines) {
+                  if (line.startsWith('ZALO_USER_ID=')) {
+                    updatedLines.push(`ZALO_USER_ID=${ownId}`);
+                    zaloIdFound = true;
+                  } else {
+                    updatedLines.push(line);
+                  }
+                }
+                
+                if (!zaloIdFound) {
+                  updatedLines.push(`ZALO_USER_ID=${ownId}`);
+                }
+                
+                fs.writeFileSync(envPath, updatedLines.join('\n'), 'utf8');
+                console.log('   💾 ZALO_USER_ID saved to .env file');
+              }
+            }
+          }
+        } catch (ownIdError) {
+          console.log('   ⚠️  Could not get own ID:', ownIdError.message);
+        }
+        
+        // Start WebSocket listener to maintain connection (CRITICAL!)
+        startWebSocketListener();
+        
+        // Start keep-alive to maintain connection
+        startKeepAlive();
+        
+        // Auto-sync history after successful login
+        // This ensures all future messages are saved
+        setTimeout(() => {
+          autoSyncHistory().catch(error => {
+            console.log('⚠️  Auto-sync history failed (non-critical):', error.message);
+          });
+        }, 2000); // Wait 2 seconds after login to ensure everything is ready
+      }).catch((error) => {
+        console.error('\n❌ QR login failed:', error);
+        console.error('   Error details:', error.message);
+        if (error.stack) {
+          console.error('   Stack:', error.stack);
+        }
+        isInitialized = false;
+        loginCompleted = false;
+        loginInProgress = false;
+        zaloClient = null;
+      });
+      
+      // Wait for QR - try callback first, then fallback to file
+      const waitForQR = new Promise((resolve, reject) => {
+        const maxWait = 30000; // 30 seconds (increased from 15)
+        const startTime = Date.now();
+        let fileCheckStarted = false;
+        
+        // Possible file locations
+        const possiblePaths = [
+          qrFilePath, // Original path: __dirname/../qr.png
+          path.join(process.cwd(), 'qr.png'), // Current working directory
+          path.join(__dirname, 'qr.png'), // Services directory
+          path.join(process.cwd(), 'zalo-service', 'qr.png'), // If running from parent
+        ];
+        
+        console.log('🔍 Will check for QR file at:', possiblePaths.map(p => path.resolve(p)).join(', '));
+        
+        const checkInterval = setInterval(() => {
+          const elapsed = Date.now() - startTime;
+          
+          // If callback received, use it
+          if (qrReceived && qrBase64) {
+            clearInterval(checkInterval);
+            console.log('✅ QR code received via callback');
+            resolve(qrBase64);
+            return;
+          }
+          
+          // Start checking for file after 1 second (not 3 seconds)
+          if (!fileCheckStarted && elapsed > 1000) {
+            fileCheckStarted = true;
+            console.log('📁 Starting to check for qr.png file...');
+          }
+          
+          // Check for file in multiple locations
+          if (fileCheckStarted) {
+            for (const filePath of possiblePaths) {
+              try {
+                if (fs.existsSync(filePath)) {
+                  // Check if file is not empty (sometimes file is created but not written yet)
+                  const stats = fs.statSync(filePath);
+                  if (stats.size > 0) {
+                    try {
+                      console.log(`📱 QR file found at: ${path.resolve(filePath)}`);
+                      console.log(`   File size: ${stats.size} bytes`);
+                      const qrImageBuffer = fs.readFileSync(filePath);
+                      const fileBase64 = `data:image/png;base64,${qrImageBuffer.toString('base64')}`;
+                      
+                      qrBase64 = fileBase64;
+                      qrReceived = true; // Mark as received
+                      console.log('✅ QR code read from file');
+                      
+                      // Call custom callback if provided
+                      if (qrCallback && typeof qrCallback === 'function') {
+                        console.log('📤 Calling custom QR callback with file data...');
+                        qrCallback(fileBase64);
+                      }
+                      
+                      clearInterval(checkInterval);
+                      resolve(fileBase64);
+                      return;
+                    } catch (error) {
+                      console.error(`❌ Error reading QR file at ${filePath}:`, error.message);
+                    }
+                  } else {
+                    console.log(`⏳ QR file found but empty (${filePath}), waiting...`);
+                  }
+                }
+              } catch (error) {
+                // File doesn't exist or can't access, continue checking other paths
+              }
+            }
+            
+            // Log progress every 5 seconds
+            if (elapsed % 5000 < 300) {
+              console.log(`⏳ Still waiting for QR code... (${Math.floor(elapsed / 1000)}s elapsed)`);
+            }
+          }
+          
+          // Timeout
+          if (elapsed > maxWait) {
+            clearInterval(checkInterval);
+            console.error(`❌ Timeout after ${maxWait / 1000} seconds`);
+            console.error('   Checked paths:', possiblePaths.map(p => path.resolve(p)).join(', '));
+            reject(new Error(`QR code not received (callback or file) within ${maxWait / 1000} seconds`));
+          }
+        }, 500); // Check every 500ms (increased from 200ms for better file detection)
+      });
+      
+      try {
+        qrBase64 = await waitForQR;
+        console.log('✅ QR code ready, waiting for user to scan...');
+      } catch (error) {
+        console.error('❌ Failed to get QR code:', error.message);
+        throw error;
+      }
+      
+      // Return immediately after QR received (don't wait for scan)
+      return zaloClient;
+    } else if (!forceNew && process.env.ZALO_COOKIE && process.env.ZALO_COOKIE !== '') {
+      // Only use saved credentials if forceNew is false AND cookie exists
+      console.log('✅ Using saved credentials');
+      console.log('   Logging in with saved cookie...');
+      
+      try {
+        // Parse cookie string to object format
+        // Cookie format from .env might be JSON string or plain string
+        let cookieData;
+        const cookieString = process.env.ZALO_COOKIE;
+        
+        console.log('   Raw cookie string length:', cookieString ? cookieString.length : 0);
+        console.log('   Raw cookie preview:', cookieString ? cookieString.substring(0, 100) + '...' : 'null');
+        
+        try {
+          cookieData = JSON.parse(cookieString);
+          console.log('   ✅ Cookie parsed as JSON');
+          console.log('   Cookie data type:', typeof cookieData);
+          if (Array.isArray(cookieData)) {
+            console.log('   Cookie is array with', cookieData.length, 'items');
+          } else if (cookieData && typeof cookieData === 'object') {
+            console.log('   Cookie is object with keys:', Object.keys(cookieData).join(', '));
+            // If it has cookies property (tough-cookie format), use that
+            if (cookieData.cookies && Array.isArray(cookieData.cookies)) {
+              console.log('   Using cookies array from object (tough-cookie format)');
+              cookieData = cookieData.cookies;
+            }
+          }
+        } catch (e) {
+          // If not JSON, assume it's a cookie string that needs parsing
+          console.log('⚠️  Cookie is not JSON format, treating as string');
+          cookieData = cookieString;
+        }
+        
+        // Ensure cookieData is in correct format (array of cookie objects)
+        // zalo-api-final expects: [{name: 'cookie1', value: 'value1'}, ...]
+        if (!Array.isArray(cookieData)) {
+          console.log('⚠️  Cookie is not an array, attempting to convert...');
+          if (typeof cookieData === 'string') {
+            // Try to parse as JSON again
+            try {
+              const parsed = JSON.parse(cookieData);
+              if (Array.isArray(parsed)) {
+                cookieData = parsed;
+              } else if (parsed && parsed.cookies && Array.isArray(parsed.cookies)) {
+                cookieData = parsed.cookies;
+              } else {
+                console.error('❌ Cannot convert cookie to array format');
+                throw new Error('Invalid cookie format: must be array or object with cookies array');
+              }
+            } catch (e2) {
+              console.error('❌ Failed to parse cookie string:', e2.message);
+              throw new Error('Invalid cookie format');
+            }
+          } else {
+            console.error('❌ Cookie is not in expected format (array or string)');
+            throw new Error('Invalid cookie format: must be array');
+          }
+        }
+        
+        console.log('   Final cookie format: array with', cookieData.length, 'items');
+        if (cookieData.length > 0) {
+          console.log('   First cookie structure:', {
+            hasName: 'name' in cookieData[0],
+            hasValue: 'value' in cookieData[0],
+            hasDomain: 'domain' in cookieData[0],
+            keys: Object.keys(cookieData[0]).join(', '),
+            name: cookieData[0].name || cookieData[0].key || 'N/A',
+            value: (cookieData[0].value || '').substring(0, 20) + '...',
+            domain: cookieData[0].domain || 'N/A',
+          });
+        }
+        
+        // Convert tough-cookie format to plain cookie objects
+        // zalo-api-final's parseCookies expects: [{name: 'cookie1', value: 'value1'}, ...]
+        // But tough-cookie format has: {key: 'name', value: 'value', domain: '...', ...}
+        // zalo-api-final's parseCookies will:
+        // 1. Extract cookies array (or use array directly)
+        // 2. Remove leading dot from domain if present
+        // 3. Create CookieJar and set cookies to "https://chat.zalo.me"
+        // 4. Use Cookie.fromJSON() which expects {key, value, ...} format
+        const convertedCookies = cookieData.map((cookie, index) => {
+          // Extract name and value - support both 'key' and 'name' properties
+          const cookieName = cookie.key || cookie.name || '';
+          const cookieValue = cookie.value || '';
+          
+          if (!cookieName || !cookieValue) {
+            console.log(`   ⚠️  Skipping invalid cookie at index ${index}:`, {
+              hasKey: !!cookie.key,
+              hasName: !!cookie.name,
+              hasValue: !!cookie.value,
+              keys: Object.keys(cookie).join(', '),
+            });
+            return null; // Invalid cookie
+          }
+          
+          // zalo-api-final's parseCookies uses Cookie.fromJSON() which expects:
+          // {key: 'name', value: 'value', ...} format
+          // But it also accepts {name: 'name', value: 'value', ...} and converts key
+          // We'll use 'key' property as that's what tough-cookie uses
+          const converted = {
+            key: cookieName,  // Use 'key' for Cookie.fromJSON()
+            value: cookieValue,
+          };
+          
+          // Include path if present (Cookie.fromJSON supports this)
+          if (cookie.path) {
+            converted.path = cookie.path;
+          }
+          
+          // Include secure flag if present
+          if (cookie.secure !== undefined) {
+            converted.secure = cookie.secure;
+          }
+          
+          // Include httpOnly flag if present
+          if (cookie.httpOnly !== undefined) {
+            converted.httpOnly = cookie.httpOnly;
+          }
+          
+          // Include expires if present (important for cookie validity)
+          if (cookie.expires) {
+            converted.expires = cookie.expires;
+          } else if (cookie.expiryTime) {
+            // Convert expiryTime (milliseconds) to ISO string
+            converted.expires = new Date(cookie.expiryTime).toISOString();
+          }
+          
+          // Include sameSite if present
+          if (cookie.sameSite) {
+            converted.sameSite = cookie.sameSite;
+          }
+          
+          // CRITICAL: DO NOT include domain property
+          // zalo-api-final's parseCookies will handle domain automatically
+          // It sets cookies to "https://chat.zalo.me" regardless of original domain
+          
+          return converted;
+        }).filter(cookie => cookie !== null && cookie.key && cookie.value); // Remove invalid cookies
+        
+        if (convertedCookies.length === 0) {
+          throw new Error('No valid cookies found after conversion');
+        }
+        
+        console.log('   Cookie conversion details:', {
+          originalCount: cookieData.length,
+          convertedCount: convertedCookies.length,
+          cookieNames: convertedCookies.map(c => c.key).join(', '),
+          hasExpires: convertedCookies.some(c => c.expires),
+          sampleCookie: convertedCookies[0] ? {
+            key: convertedCookies[0].key,
+            hasValue: !!convertedCookies[0].value,
+            hasPath: !!convertedCookies[0].path,
+            hasExpires: !!convertedCookies[0].expires,
+          } : null,
+        });
+        
+        console.log('   Converted cookies:', {
+          originalCount: cookieData.length,
+          convertedCount: convertedCookies.length,
+          firstCookieName: convertedCookies[0]?.name || 'N/A',
+        });
+        
+        // Call login() to get API instance
+        // Ensure all required params are present
+        const imei = process.env.ZALO_IMEI || '357895081234567';
+        const userAgent = process.env.ZALO_USER_AGENT || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0';
+        
+        console.log('   Login params:', {
+          hasCookie: !!convertedCookies,
+          cookieType: Array.isArray(convertedCookies) ? 'array' : typeof convertedCookies,
+          cookieLength: Array.isArray(convertedCookies) ? convertedCookies.length : 'N/A',
+          imei: imei,
+          userAgent: userAgent.substring(0, 50) + '...',
+        });
+        
+        // Attempt login with converted cookies
+        console.log('   🔐 Attempting login with zalo-api-final...');
+        console.log('   Cookie details:', {
+          count: convertedCookies.length,
+          cookieNames: convertedCookies.map(c => c.name).join(', '),
+          hasAllRequired: convertedCookies.length > 0,
+        });
+        
+        let apiInstance;
+        try {
+          apiInstance = await zaloClient.login({
+            cookie: convertedCookies,
+            imei: imei,
+            userAgent: userAgent,
+            language: 'vi'
+          });
+          
+          // Replace zaloClient with API instance
+          zaloClient = apiInstance;
+          console.log('   ✅ Login successful, API instance obtained');
+        } catch (loginError) {
+          console.error('   ❌ Login failed with error:', loginError.message);
+          console.error('   Error type:', loginError.constructor.name);
+          console.error('   Error code:', loginError.code || 'N/A');
+          console.error('   Error stack:', loginError.stack);
+          
+          // Check if it's a cookie/authentication issue
+          if (loginError.message.includes('Đăng nhập thất bại') || 
+              loginError.message.includes('thất bại') ||
+              loginError.message.includes('failed')) {
+            console.error('   ⚠️  This appears to be an authentication failure.');
+            console.error('   Possible causes:');
+            console.error('   1. Cookie has expired or is invalid');
+            console.error('   2. Cookie format is incorrect');
+            console.error('   3. IMEI or User-Agent mismatch');
+            console.error('   4. Zalo API has changed authentication requirements');
+            console.error('   💡 Solution: User needs to re-login with QR code');
+            console.error('   💡 Cookie may need to be refreshed from a fresh QR login');
+          }
+          
+          throw loginError;
+        }
+        console.log('   API instance methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(apiInstance))
+          .filter(name => typeof apiInstance[name] === 'function')
+          .slice(0, 10)
+          .join(', '), '...');
+        
+        isInitialized = true;
+        loginCompleted = true;
+        
+        // Try to get and set ZALO_USER_ID using getOwnId()
+        try {
+          if (typeof apiInstance.getOwnId === 'function') {
+            const ownId = await apiInstance.getOwnId();
+            if (ownId) {
+              process.env.ZALO_USER_ID = String(ownId);
+              console.log('   ✅ ZALO_USER_ID set from getOwnId():', process.env.ZALO_USER_ID);
+              
+              // Also save to .env file
+              const envPath = path.join(__dirname, '..', '.env');
+              if (fs.existsSync(envPath)) {
+                let envContent = fs.readFileSync(envPath, 'utf8');
+                const lines = envContent.split('\n');
+                const updatedLines = [];
+                let zaloIdFound = false;
+                
+                for (const line of lines) {
+                  if (line.startsWith('ZALO_USER_ID=')) {
+                    updatedLines.push(`ZALO_USER_ID=${ownId}`);
+                    zaloIdFound = true;
+                  } else {
+                    updatedLines.push(line);
+                  }
+                }
+                
+                if (!zaloIdFound) {
+                  updatedLines.push(`ZALO_USER_ID=${ownId}`);
+                }
+                
+                fs.writeFileSync(envPath, updatedLines.join('\n'), 'utf8');
+                console.log('   💾 ZALO_USER_ID saved to .env file');
+              }
+            }
+          }
+        } catch (ownIdError) {
+          console.log('   ⚠️  Could not get own ID:', ownIdError.message);
+        }
+        
+        // Start WebSocket listener to maintain connection (CRITICAL!)
+        startWebSocketListener();
+        
+        // Start keep-alive to maintain connection
+        startKeepAlive();
+        
+        // Auto-sync history after successful login
+        // This ensures all future messages are saved
+        setTimeout(() => {
+          autoSyncHistory().catch(error => {
+            console.log('⚠️  Auto-sync history failed (non-critical):', error.message);
+          });
+        }, 2000); // Wait 2 seconds after login to ensure everything is ready
+      } catch (error) {
+        console.error('❌ Login with saved credentials failed:', error.message);
+        console.error('   Will need to login with QR code again');
+        // Reset to force QR login
+        isInitialized = false;
+        loginCompleted = false;
+        zaloClient = null;
+        throw error;
+      }
+    }
+
+    console.log('✅ Zalo API initialized successfully');
+    return zaloClient;
+  } catch (error) {
+    console.error('❌ Failed to initialize Zalo API:', error);
+    isInitialized = false;
+    zaloClient = null;
+    throw error;
+  }
+}
+
+/**
+ * Get Zalo client instance
+ */
+function getZaloClient() {
+  if (!isInitialized || !zaloClient) {
+    throw new Error('Zalo client not initialized. Call initializeZalo() first.');
+  }
+  return zaloClient;
+}
+
+/**
+ * Check if Zalo is initialized and ready
+ */
+function isZaloReady() {
+  // If we have saved credentials, check if initialized
+  if (process.env.ZALO_COOKIE && process.env.ZALO_COOKIE !== '') {
+    return isInitialized && zaloClient !== null;
+  }
+  
+  // For QR login, check if login completed
+  if (loginCompleted && isInitialized && zaloClient !== null) {
+    return true;
+  }
+  
+  // If login is in progress, not ready yet
+  if (loginInProgress) {
+    return false;
+  }
+  
+  return false;
+}
+
+/**
+ * Save credentials to .env file
+ */
+async function saveCredentialsToEnv(cookieData) {
+  try {
+    const envPath = path.join(__dirname, '..', '.env');
+    let envContent = '';
+    
+    // Read existing .env if exists
+    if (fs.existsSync(envPath)) {
+      envContent = fs.readFileSync(envPath, 'utf8');
+    }
+    
+    // Extract credentials
+    const cookies = cookieData.cookies || cookieData;
+    const cookieString = JSON.stringify(cookies);
+    
+    // Update or add credentials
+    const lines = envContent.split('\n');
+    const updatedLines = [];
+    let cookieFound = false;
+    let imeiFound = false;
+    let userAgentFound = false;
+    
+    for (const line of lines) {
+      if (line.startsWith('ZALO_COOKIE=')) {
+        updatedLines.push(`ZALO_COOKIE=${cookieString}`);
+        cookieFound = true;
+      } else if (line.startsWith('ZALO_IMEI=')) {
+        // Keep existing IMEI or use default
+        updatedLines.push(line);
+        imeiFound = true;
+      } else if (line.startsWith('ZALO_USER_AGENT=')) {
+        // Keep existing User Agent or use default
+        updatedLines.push(line);
+        userAgentFound = true;
+      } else {
+        updatedLines.push(line);
+      }
+    }
+    
+    // Add missing credentials
+    if (!cookieFound) {
+      updatedLines.push(`ZALO_COOKIE=${cookieString}`);
+    }
+    if (!imeiFound) {
+      updatedLines.push(`ZALO_IMEI=${process.env.ZALO_IMEI || ''}`);
+    }
+    if (!userAgentFound) {
+      updatedLines.push(`ZALO_USER_AGENT=${process.env.ZALO_USER_AGENT || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0'}`);
+    }
+    
+    // Write back to .env
+    fs.writeFileSync(envPath, updatedLines.join('\n'), 'utf8');
+    console.log('💾 Credentials saved to .env file');
+    
+    // Update process.env for current session
+    process.env.ZALO_COOKIE = cookieString;
+  } catch (error) {
+    console.error('❌ Failed to save credentials to .env:', error.message);
+  }
+}
+
+/**
+ * Start WebSocket listener to maintain connection
+ * This is CRITICAL to prevent automatic logout!
+ * 
+ * The listen() method maintains a persistent WebSocket connection to Zalo servers,
+ * which prevents the session from timing out and being logged out automatically.
+ */
+function startWebSocketListener() {
+  // Prevent multiple simultaneous starts
+  if (isRestarting) {
+    console.log('⚠️  WebSocket listener restart already in progress, skipping...');
+    return;
+  }
+  
+  // Clear any pending restart timeout
+  if (restartTimeout) {
+    clearTimeout(restartTimeout);
+    restartTimeout = null;
+  }
+  
+  // Stop existing listener if any (but only if it's already started)
+  if (wsListener) {
+    try {
+      // Remove all event listeners first to prevent duplicate handlers
+      wsListener.removeAllListeners();
+      // Then stop the listener
+      if (typeof wsListener.stop === 'function') {
+        // Check if listener is already stopped or in a safe state
+        try {
+          wsListener.stop();
+        } catch (stopError) {
+          // Ignore errors if WebSocket is already closed or not connected
+          if (!stopError.message.includes('closed before') && 
+              !stopError.message.includes('not connected')) {
+            console.log('⚠️  Error stopping listener (non-critical):', stopError.message);
+          }
+        }
+      }
+    } catch (error) {
+      // Ignore errors when stopping - listener might already be stopped
+      if (!error.message.includes('closed before') && 
+          !error.message.includes('not connected')) {
+        console.log('⚠️  Error cleaning up listener (non-critical):', error.message);
+      }
+    }
+    wsListener = null;
+  }
+  
+  if (!zaloClient) {
+    console.log('⚠️  Zalo client not available, skipping WebSocket listener');
+    return;
+  }
+  
+  // Check if listener property exists (API instance has listener, not listen() method)
+  if (!zaloClient.listener || typeof zaloClient.listener.start !== 'function') {
+    console.log('⚠️  listener property not available on API instance');
+    console.log('   Available properties:', Object.getOwnPropertyNames(zaloClient)
+      .filter(name => zaloClient[name] && typeof zaloClient[name] === 'object')
+      .slice(0, 15)
+      .join(', '), '...');
+    return;
+  }
+  
+  console.log('🔌 Starting WebSocket listener to maintain connection...');
+  console.log('   This will prevent automatic logout by keeping WebSocket alive');
+  
+  try {
+    // Use listener property (EventEmitter) to listen for events
+    // The listener maintains WebSocket connection and emits events
+    const listener = zaloClient.listener;
+    
+    // Log all available events for debugging
+    console.log('🔍 [WebSocket] Setting up listener events...');
+    console.log('   Listener type:', typeof listener);
+    console.log('   Listener has on method:', typeof listener.on === 'function');
+    console.log('   Listener has once method:', typeof listener.once === 'function');
+    
+    // Listen for ALL events to debug what's being emitted
+    const originalEmit = listener.emit;
+    listener.emit = function(...args) {
+      const eventName = args[0];
+      if (eventName !== 'connected' && eventName !== 'disconnected' && eventName !== 'closed' && eventName !== 'error') {
+        console.log('📡 [WebSocket] Event emitted:', {
+          event: eventName,
+          hasData: args.length > 1,
+          dataType: args.length > 1 ? typeof args[1] : 'none',
+          timestamp: new Date().toISOString(),
+        });
+      }
+      return originalEmit.apply(this, args);
+    };
+    
+    // Listen for messages
+    listener.on('message', (message) => {
+      // Handle incoming message
+      // Message is UserMessage | GroupMessage
+      // UserMessage: { type: ThreadType.User, data: TMessage, threadId: string, isSelf: boolean }
+      // GroupMessage: { type: ThreadType.Group, data: TGroupMessage, threadId: string, isSelf: boolean }
+      console.log('📨 [WebSocket] Received Zalo message:', {
+        type: message.type,
+        threadId: message.threadId,
+        isSelf: message.isSelf,
+        hasData: !!message.data,
+        msgId: message.data?.msgId,
+        msgType: message.data?.msgType,
+        uidFrom: message.data?.uidFrom,
+        idTo: message.data?.idTo,
+        hasContent: !!message.data?.content,
+        contentType: typeof message.data?.content,
+        hasQuote: !!message.data?.quote,
+        quoteKeys: message.data?.quote ? Object.keys(message.data.quote) : null,
+        quoteUidFrom: message.data?.quote?.uidFrom,
+        quoteMsgId: message.data?.quote?.msgId,
+        timestamp: new Date().toISOString(),
+      });
+      
+      // DEBUG: For file messages, log ALL message.data keys to find file URL
+      if (message.data?.msgType === 'share.file') {
+        console.log('🔍 [DEBUG] File message.data keys:', Object.keys(message.data));
+        console.log('🔍 [DEBUG] File message.data full:', JSON.stringify(message.data, null, 2).substring(0, 1000));
+      }
+      
+      // Handle messages from same account but different devices
+      // isSelf = true means the message is from our account, but it could be:
+      // 1. Sent from this device (already saved via sendMessage) - should skip
+      // 2. Sent from another device (not in database) - should save
+      // We'll let Laravel check if message exists before saving to avoid duplicates
+      if (message.isSelf) {
+        console.log('📱 [WebSocket] Message from same account (isSelf=true)', {
+          msgId: message.data?.msgId,
+          threadId: message.threadId,
+          uidFrom: message.data?.uidFrom,
+          note: 'Will check in Laravel if message already exists to avoid duplicates',
+        });
+        // Don't skip - let Laravel handle duplicate checking via updateOrCreate
+      }
+      
+      // Determine if it's a group message
+      const { ThreadType } = require('zalo-api-final');
+      const isGroup = message.type === ThreadType.Group;
+      
+      // Extract data from message.data (TMessage)
+      const messageData = message.data || {};
+      const content = messageData.content || '';
+      
+      // Parse content - can be string or object
+      let text = '';
+      let attachment = null;
+      
+      // DEBUG: Log raw content structure for file messages
+      if (messageData.msgType === 'share.file') {
+        console.log('🔍 [DEBUG] File message raw content:', {
+          msgId: messageData.msgId,
+          msgType: messageData.msgType,
+          contentType: typeof content,
+          contentIsString: typeof content === 'string',
+          contentIsObject: typeof content === 'object',
+          contentKeys: typeof content === 'object' ? Object.keys(content) : null,
+          contentPreview: typeof content === 'string' ? content : JSON.stringify(content).substring(0, 200),
+        });
+      }
+      
+      if (typeof content === 'string') {
+        text = content || '';
+      } else if (content && typeof content === 'object') {
+        // Content might be an attachment object
+        // For files (msgType='share.file'), extract Zalo file URL
+        if (content.href || content.url || content.fileUrl) {
+          const fileUrl = content.fileUrl || content.href || content.url; // Prefer fileUrl for files
+          const fileName = content.fileName || content.title || content.description || '';
+          
+          attachment = {
+            type: content.type || 'file',
+            url: fileUrl,
+            fileName: fileName,
+            title: fileName,
+            description: content.description,
+            thumb: content.thumb,
+            fileSize: content.fileSize || content.size,
+            fileId: content.fileId || content.id,
+          };
+          
+          // Use fileName as text (NOT the URL!)
+          text = fileName;
+          
+          console.log('📎 [WebSocket] File attachment extracted:', {
+            msgId: messageData.msgId,
+            msgType: messageData.msgType,
+            fileName: fileName,
+            fileUrl: fileUrl ? fileUrl.substring(0, 80) + '...' : null,
+            hasFileUrl: !!fileUrl,
+            contentKeys: Object.keys(content),
+          });
+        } else if (content.msg) {
+          text = content.msg || '';
+          if (content.attachments && Array.isArray(content.attachments) && content.attachments.length > 0) {
+            attachment = content.attachments[0];
+          }
+        } else if (content.text) {
+          text = content.text || '';
+        } else if (content.content) {
+          text = typeof content.content === 'string' ? content.content : JSON.stringify(content.content);
+        } else {
+          // Fallback: try to extract any string value or use JSON stringify
+          text = JSON.stringify(content).substring(0, 500); // Limit length
+        }
+      } else if (content === null || content === undefined) {
+        // Handle null/undefined content
+        text = '';
+      }
+      
+      // IMPORTANT: Skip text-only messages that are just filenames (msgType='webchat')
+      // These are duplicate messages sent before the actual file attachment
+      if (messageData.msgType === 'webchat' && text && !attachment) {
+        // Check if text looks like a filename
+        const isFilename = /\.(docx?|xlsx?|pptx?|pdf|txt|zip|rar|jpg|jpeg|png|gif)$/i.test(text);
+        if (isFilename) {
+          console.log('⏭️  [WebSocket] Skipping text-only filename message (duplicate):', {
+            msgId: messageData.msgId,
+            msgType: messageData.msgType,
+            text: text,
+            note: 'Actual file message will follow',
+          });
+          return; // Skip this message
+        }
+      }
+      
+      // Ensure text is always a string (never null)
+      text = text || '';
+      
+      // Extract quote data if message is a reply
+      // zalo-api-final quote format: { content, msgType, propertyExt?, uidFrom, msgId, cliMsgId, ts, ttl }
+      // Note: zalo-api-final may return BigNumber objects for large IDs, need to convert to string
+      let quoteData = null;
+      if (messageData.quote) {
+        console.log('📎 [WebSocket] Quote data found in message:', {
+          quoteKeys: Object.keys(messageData.quote),
+          uidFrom: messageData.quote.uidFrom,
+          ownerId: messageData.quote.ownerId,
+          ownerIdType: typeof messageData.quote.ownerId,
+          msgId: messageData.quote.msgId,
+          globalMsgId: messageData.quote.globalMsgId,
+          cliMsgId: messageData.quote.cliMsgId,
+          content: messageData.quote.content?.substring(0, 50),
+          msg: messageData.quote.msg?.substring(0, 50),
+          msgType: messageData.quote.msgType,
+          cliMsgType: messageData.quote.cliMsgType,
+        });
+        
+        // Helper function to convert BigNumber or any value to string
+        const toString = (value) => {
+          if (value === null || value === undefined) return null;
+          // Check if it's a BigNumber object (has toString method)
+          if (typeof value === 'object' && value.toString && typeof value.toString === 'function') {
+            return value.toString();
+          }
+          return String(value);
+        };
+        
+        // Extract and convert ownerId/uidFrom - handle BigNumber objects
+        const rawOwnerId = messageData.quote.uidFrom || messageData.quote.ownerId;
+        const ownerIdStr = rawOwnerId ? toString(rawOwnerId) : null;
+        
+        // Extract and convert message IDs - handle BigNumber objects
+        const rawGlobalMsgId = messageData.quote.msgId || messageData.quote.globalMsgId;
+        const globalMsgIdStr = rawGlobalMsgId ? toString(rawGlobalMsgId) : null;
+        
+        const rawCliMsgId = messageData.quote.cliMsgId;
+        const cliMsgIdStr = rawCliMsgId ? toString(rawCliMsgId) : null;
+        
+        // Extract and convert timestamp
+        const rawTs = messageData.quote.ts;
+        const tsValue = rawTs ? (typeof rawTs === 'object' && rawTs.toString ? parseInt(rawTs.toString()) : parseInt(rawTs)) : null;
+        
+        quoteData = {
+          // Map zalo-api-final format to our internal format
+          // Convert all IDs to strings to avoid BigNumber issues
+          ownerId: ownerIdStr, // Convert BigNumber to string
+          uidFrom: ownerIdStr, // Also include uidFrom for compatibility
+          cliMsgId: cliMsgIdStr, // Convert to string
+          globalMsgId: globalMsgIdStr, // Convert to string
+          msgId: globalMsgIdStr, // Also include msgId
+          cliMsgType: messageData.quote.msgType || messageData.quote.cliMsgType,
+          msgType: messageData.quote.msgType || messageData.quote.cliMsgType,
+          ts: tsValue || (messageData.quote.ts ? parseInt(messageData.quote.ts) : null),
+          msg: messageData.quote.content || messageData.quote.msg || '', // content is the message text
+          content: messageData.quote.content || messageData.quote.msg || '',
+          attach: messageData.quote.attach,
+          fromD: messageData.quote.fromD,
+          ttl: messageData.quote.ttl ? (typeof messageData.quote.ttl === 'object' && messageData.quote.ttl.toString ? parseInt(messageData.quote.ttl.toString()) : parseInt(messageData.quote.ttl)) : 0,
+          propertyExt: messageData.quote.propertyExt,
+        };
+        
+        console.log('📎 [WebSocket] Quote data extracted (converted to strings):', {
+          ownerId: quoteData.ownerId,
+          ownerIdType: typeof quoteData.ownerId,
+          uidFrom: quoteData.uidFrom,
+          globalMsgId: quoteData.globalMsgId,
+          msgId: quoteData.msgId,
+          cliMsgId: quoteData.cliMsgId,
+          content: quoteData.content?.substring(0, 50),
+        });
+      } else {
+        console.log('ℹ️  [WebSocket] No quote data in message (not a reply)');
+      }
+      
+      // Convert Message object to event format for handleIncomingMessage
+      // Include ALL possible message IDs from Zalo for accurate finding
+      const msgId = messageData.msgId?.toString() || null;
+      const realMsgId = messageData.realMsgId?.toString() || null;
+      const cliMsgId = messageData.cliMsgId?.toString() || null;
+      const globalMsgId = messageData.globalMsgId?.toString() || msgId || realMsgId;
+      
+      // Prioritize msgId over realMsgId for messageId (msgId is the primary ID from Zalo)
+      // Use msgId first, then realMsgId, then cliMsgId as fallback
+      const primaryMessageId = msgId || realMsgId || cliMsgId || null;
+      
+      // Extract sender information (important for group messages)
+      const senderId = messageData.uidFrom ? String(messageData.uidFrom) : null;
+      const senderName = messageData.dName || messageData.displayName || null;
+      
+      // Debug log sender info extraction
+      if (senderId) {
+        console.log('👤 [WebSocket] Sender info extracted:', {
+          senderId,
+          senderName,
+          hasDName: !!messageData.dName,
+          hasDisplayName: !!messageData.displayName,
+          messageDataKeys: Object.keys(messageData),
+        });
+      }
+      
+      const event = {
+        type: 'message',
+        userId: isGroup ? null : message.threadId,
+        groupId: isGroup ? message.threadId : null,
+        text: text,
+        content: text,
+        messageId: primaryMessageId, // Use primary message ID
+        id: primaryMessageId, // Alias for compatibility
+        cliMsgId: cliMsgId,
+        globalMsgId: globalMsgId,
+        realMsgId: realMsgId,
+        // All message IDs in one object for easy access
+        allMessageIds: {
+          msgId: msgId,
+          cliMsgId: cliMsgId,
+          realMsgId: realMsgId,
+          globalMsgId: globalMsgId,
+        },
+        senderId: senderId, // Sender Zalo user ID (for group messages)
+        senderName: senderName, // Sender display name (for group messages)
+        attachment: attachment,
+        quote: quoteData,
+        isSelf: message.isSelf, // CRITICAL: Indicates if message is from same account (other device)
+        timestamp: messageData.ts ? new Date(parseInt(messageData.ts)).toISOString() : new Date().toISOString()
+      };
+      
+      // Log message IDs for debugging
+      console.log('📋 [WebSocket] Message IDs extracted:', {
+        msgId: msgId,
+        realMsgId: realMsgId,
+        cliMsgId: cliMsgId,
+        globalMsgId: globalMsgId,
+        primaryMessageId: primaryMessageId,
+        hasQuote: !!quoteData,
+        quoteOwnerId: quoteData?.ownerId,
+        quoteUidFrom: quoteData?.uidFrom,
+      });
+      
+      // Process and save message via Laravel API
+      handleIncomingMessage(event).catch(error => {
+        console.error('❌ Failed to handle incoming message:', error.message);
+      });
+    });
+    
+    // Listen for connection events
+    listener.on('connected', () => {
+      console.log('✅ [WebSocket] Connection established');
+      console.log('   Listener is active and ready to receive messages');
+      isRestarting = false; // Reset restart flag on successful connection
+    });
+    
+    // Debounced restart function to prevent spam
+    const scheduleRestart = (reason, eventType) => {
+      // Clear any existing restart timeout
+      if (restartTimeout) {
+        clearTimeout(restartTimeout);
+      }
+      
+      // Only restart if not already restarting and conditions are met
+      if (!isRestarting && zaloClient && isInitialized && loginCompleted) {
+        isRestarting = true;
+        
+        // Log only once per minute to prevent spam
+        const now = Date.now();
+        if (!scheduleRestart.lastLogTime || (now - scheduleRestart.lastLogTime) > 60000) {
+          console.log(`⚠️  WebSocket ${eventType}: ${reason}. Will attempt restart in 10 seconds...`);
+          scheduleRestart.lastLogTime = now;
+        }
+        
+        // Wait 10 seconds before restart (longer delay to prevent rapid restarts)
+        restartTimeout = setTimeout(() => {
+          restartTimeout = null;
+          if (zaloClient && isInitialized && loginCompleted && !wsListener) {
+            console.log('🔄 Restarting WebSocket listener...');
+            startWebSocketListener();
+          } else {
+            isRestarting = false;
+          }
+        }, 10000); // 10 seconds delay
+      }
+    };
+    
+    listener.on('disconnected', (reason) => {
+      console.log('⚠️  [WebSocket] Disconnected:', reason);
+      scheduleRestart(reason, 'disconnected');
+    });
+    
+    listener.on('closed', (reason) => {
+      console.log('⚠️  [WebSocket] Closed:', reason);
+      scheduleRestart(reason, 'closed');
+    });
+    
+    listener.on('error', (error) => {
+      // Only log error if it's not a "closed before connection" error (common during stop)
+      const errorMessage = error?.message || String(error);
+      if (!errorMessage.includes('closed before the connection was established') &&
+          !errorMessage.includes('WebSocket was closed')) {
+        console.error('❌ [WebSocket] Error:', errorMessage);
+        if (error.stack) {
+          console.error('   Stack:', error.stack);
+        }
+      }
+      // Don't restart on error - let disconnected/closed events handle it
+    });
+    
+    // Listen for reactions
+    listener.on('reaction', (reaction) => {
+      console.log('😊 [WebSocket] Received reaction event:', {
+        hasData: !!reaction,
+        dataKeys: reaction?.data ? Object.keys(reaction.data) : null,
+        timestamp: new Date().toISOString(),
+      });
+      
+      const reactionIcon = reaction.data?.content?.rIcon || reaction.data?.rIcon;
+      
+      // Extract message ID - reaction.data.msgId is the reaction's own ID, NOT the message ID!
+      // The actual message being reacted to is in content.rMsg[0].gMsgID (globalMsgId) or cMsgID (cliMsgId)
+      let msgId = null;
+      let cliMsgId = null;
+      
+      // PRIORITY: Extract from content.rMsg[0] - this contains the actual message IDs
+      if (reaction.data?.content?.rMsg && Array.isArray(reaction.data.content.rMsg) && reaction.data.content.rMsg.length > 0) {
+        const rMsg = reaction.data.content.rMsg[0];
+        
+        // gMsgID is the global message ID (msgId from Zalo server) - THIS IS THE PRIMARY ID
+        if (rMsg.gMsgID) {
+          msgId = rMsg.gMsgID.toString();
+        }
+        // cMsgID is the client message ID (cliMsgId)
+        if (rMsg.cMsgID) {
+          cliMsgId = rMsg.cMsgID.toString();
+        }
+        
+        // Fallback: Try other field names (case variations)
+        if (!msgId && rMsg.gMsgId) {
+          msgId = rMsg.gMsgId.toString();
+        }
+        if (!msgId && rMsg.msgId) {
+          msgId = rMsg.msgId.toString();
+        }
+        if (!msgId && rMsg.cMsg) {
+          msgId = rMsg.cMsg.toString();
+        }
+        if (!cliMsgId && rMsg.cMsgId) {
+          cliMsgId = rMsg.cMsgId.toString();
+        }
+        if (!cliMsgId && rMsg.cliMsgId) {
+          cliMsgId = rMsg.cliMsgId.toString();
+        }
+      }
+      
+      // Fallback: If still no IDs found, try from reaction.data (but these are usually reaction IDs, not message IDs)
+      if (!msgId) {
+        msgId = reaction.data?.msgId?.toString() || null;
+      }
+      if (!cliMsgId) {
+        cliMsgId = reaction.data?.cliMsgId?.toString() || null;
+      }
+      
+      const threadId = reaction.threadId?.toString();
+      
+      console.log('😊 [WebSocket] Received Zalo reaction:', {
+        msgId: msgId,
+        cliMsgId: cliMsgId,
+        uidFrom: reaction.data?.uidFrom?.toString(),
+        reactionIcon: reactionIcon,
+        threadId: threadId,
+        isGroup: reaction.isGroup,
+        timestamp: new Date().toISOString(),
+        rawData: JSON.stringify(reaction.data).substring(0, 500), // Log more data for debugging
+        hasRMsg: !!(reaction.data?.content?.rMsg),
+        rMsgLength: reaction.data?.content?.rMsg?.length || 0,
+        rMsgData: reaction.data?.content?.rMsg?.[0] || null, // Log rMsg[0] for debugging
+      });
+      
+      // Handle reaction - save to Laravel
+      handleIncomingReaction({
+        type: 'reaction',
+        userId: reaction.isGroup ? null : threadId,
+        groupId: reaction.isGroup ? threadId : null,
+        messageId: msgId,
+        cliMsgId: cliMsgId,
+        userIdFrom: reaction.data?.uidFrom?.toString(),
+        reactionIcon: reactionIcon, // Use the extracted reactionIcon
+        reactionType: reaction.data?.content?.rType || reaction.data?.rType || 0,
+        reactionSource: reaction.data?.content?.source || reaction.data?.source || 0,
+        reactionData: reaction.data,
+        timestamp: reaction.data?.ts ? new Date(parseInt(reaction.data.ts)).toISOString() : new Date().toISOString()
+      }).catch(error => {
+        console.error('❌ Failed to handle incoming reaction:', error.message);
+        if (error.stack) {
+          console.error('   Stack:', error.stack);
+        }
+      });
+    });
+    
+    // Start the listener (this maintains WebSocket connection)
+    try {
+      listener.start({ retryOnClose: true });
+      wsListener = listener;
+      
+      console.log('✅ WebSocket listener started successfully');
+      console.log('   Connection will be maintained automatically');
+      console.log('   Listener status:', {
+        hasListener: !!wsListener,
+        listenerType: typeof wsListener,
+        hasStart: typeof wsListener?.start === 'function',
+        hasStop: typeof wsListener?.stop === 'function',
+        hasOn: typeof wsListener?.on === 'function',
+      });
+    } catch (startError) {
+      console.error('❌ Failed to start listener:', startError.message);
+      if (startError.stack) {
+        console.error('   Stack:', startError.stack);
+      }
+      wsListener = null;
+      throw startError;
+    }
+  } catch (error) {
+    console.error('❌ Failed to start WebSocket listener:', error.message);
+    if (error.stack) {
+      console.error('   Stack:', error.stack);
+    }
+    wsListener = null;
+  }
+}
+
+/**
+ * Handle incoming reaction from Zalo WebSocket
+ * Save to Laravel database and broadcast via Socket.IO
+ */
+async function handleIncomingReaction(event) {
+  try {
+    const laravelUrl = process.env.LARAVEL_URL || 'http://127.0.0.1:8000';
+    const apiKey = process.env.API_SECRET_KEY;
+    
+    if (!apiKey) {
+      console.warn('⚠️  API_SECRET_KEY not set, cannot save reaction');
+      return;
+    }
+    
+    const zaloId = process.env.ZALO_USER_ID;
+    if (!zaloId) {
+      console.warn('⚠️  ZALO_USER_ID not set, cannot determine account');
+      return;
+    }
+    
+    const payload = {
+      zalo_id: zaloId,
+      message_id: event.messageId,
+      cli_msg_id: event.cliMsgId,
+      recipient_id: event.userId || event.groupId,
+      recipient_type: event.groupId ? 'group' : 'user',
+      user_id: event.userIdFrom,
+      reaction_icon: event.reactionIcon,
+      reaction_type: event.reactionType,
+      reaction_source: event.reactionSource,
+      reaction_data: event.reactionData,
+      reacted_at: event.timestamp
+    };
+    
+    console.log('📤 [zalo-service] Sending reaction to Laravel:', {
+      zalo_id: payload.zalo_id,
+      message_id: payload.message_id,
+      cli_msg_id: payload.cli_msg_id,
+      recipient_id: payload.recipient_id,
+      recipient_type: payload.recipient_type,
+      user_id: payload.user_id,
+      reaction_icon: payload.reaction_icon,
+    });
+    
+    // Call Laravel API to save reaction with retry mechanism
+    // Retry if message not found (might be race condition - message not saved yet)
+    const maxRetries = 3;
+    let retries = 0;
+    let response = null;
+    let lastError = null;
+    
+    while (retries < maxRetries) {
+      try {
+        response = await fetch(`${laravelUrl}/api/zalo/messages/receive-reaction`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': apiKey,
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify(payload)
+        });
+        
+        if (response.ok) {
+          break; // Success, exit retry loop
+        }
+        
+        // If 404 (message not found), retry after delay
+        // This handles race condition where reaction arrives before message is saved
+        if (response.status === 404) {
+          const errorData = await response.json().catch(() => ({}));
+          if (errorData.message && errorData.message.includes('Message not found')) {
+            retries++;
+            if (retries < maxRetries) {
+              const delay = 1000 * retries; // Exponential backoff: 1s, 2s, 3s
+              console.log(`⚠️  [zalo-service] Message not found for reaction, retrying in ${delay}ms (attempt ${retries}/${maxRetries})...`);
+              console.log(`   Searching for: message_id=${payload.message_id}, cli_msg_id=${payload.cli_msg_id}`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+              continue; // Retry
+            }
+          }
+        }
+        
+        // For other errors, don't retry
+        break;
+      } catch (error) {
+        lastError = error;
+        retries++;
+        if (retries < maxRetries) {
+          const delay = 1000 * retries;
+          console.log(`⚠️  [zalo-service] Reaction save error, retrying in ${delay}ms (attempt ${retries}/${maxRetries})...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+    
+    if (!response || !response.ok) {
+      const errorText = response ? await response.text().catch(() => 'Unknown error') : (lastError?.message || 'Unknown error');
+      console.error('❌ Failed to save reaction to Laravel after retries:', {
+        status: response?.status || 'N/A',
+        statusText: response?.statusText || 'N/A',
+        error: errorText,
+        payload: {
+          zalo_id: payload.zalo_id,
+          message_id: payload.message_id,
+          cli_msg_id: payload.cli_msg_id,
+          recipient_id: payload.recipient_id,
+        },
+        retries: retries,
+      });
+      
+      // TODO: Queue reaction for later processing (implement message queue)
+      // For now, just log the error
+      return;
+    }
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      console.log('✅ Reaction saved to database:', result.data?.id);
+      
+      // Broadcast via Socket.IO if available
+      try {
+        const { sendToZaloConversation } = require('./realtimeServer');
+        const accountId = result.data?.zalo_account_id;
+        
+        if (accountId) {
+          sendToZaloConversation(accountId, event.userId || event.groupId, 'zalo:reaction:new', {
+            account_id: accountId,
+            recipient_id: event.userId || event.groupId,
+            recipient_type: event.groupId ? 'group' : 'user',
+            message_id: event.messageId,
+            reaction: result.data
+          });
+          
+          console.log('📡 Reaction broadcasted via Socket.IO');
+        }
+      } catch (socketError) {
+        console.warn('⚠️  Socket.IO not available for broadcasting:', socketError.message);
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error handling incoming reaction:', error.message);
+    if (error.stack) {
+      console.error('   Stack:', error.stack);
+    }
+  }
+}
+
+/**
+ * Handle incoming message from Zalo WebSocket
+ * Save to Laravel database and broadcast via Socket.IO
+ */
+async function handleIncomingMessage(event) {
+  try {
+    const laravelUrl = process.env.LARAVEL_URL || 'http://127.0.0.1:8000';
+    const apiKey = process.env.API_SECRET_KEY;
+    
+    if (!apiKey) {
+      console.warn('⚠️  API_SECRET_KEY not set, cannot save message');
+      return;
+    }
+    
+    // Extract message data from event
+    const recipientId = event.userId || event.groupId;
+    const recipientType = event.groupId ? 'group' : 'user';
+    // Ensure content is always a string (never null)
+    let content = (event.text || event.content || '').toString();
+    const messageId = event.messageId || event.id || null;
+    const cliMsgId = event.cliMsgId || null;
+    const attachment = event.attachment || null;
+    const quote = event.quote || null;
+    
+  // Check if this is a self-sent image message
+  // After uploading with photoId, Zalo should return CDN URL in content
+  if (event.isSelf && messageId) {
+    const imageCache = global.imageSendCache;
+    
+    // Check if content is a local file path or Zalo CDN URL
+    const isLocalPath = content.includes(':\\') || content.includes('\\temp\\') || content.includes('storage/app/');
+    const isZaloCdnUrl = content.includes('zdn.vn') || content.includes('f20-zpc') || content.includes('f64-zpg') || content.includes('f21-zpc') || content.includes('f22-zpc');
+    
+    if (isZaloCdnUrl) {
+      // Perfect! Content is already Zalo CDN URL
+      console.log('✅ [WebSocket] Content is Zalo CDN URL (photoId method worked!):', {
+        msgId: messageId,
+        zaloCdnUrl: content.substring(0, 80) + '...',
+      });
+      
+      // Clean up cache if exists
+      if (imageCache && imageCache.has(messageId)) {
+        imageCache.delete(messageId);
+      }
+    } else if (isLocalPath) {
+      // This should NOT happen if we send with photoId correctly
+      console.error('❌ [WebSocket] Still receiving local path! photoId method failed:', {
+        msgId: messageId,
+        localPath: content.substring(0, 80),
+      });
+      
+      // Try to use cached CDN URL as fallback
+      if (imageCache && imageCache.has(messageId)) {
+        const cachedData = imageCache.get(messageId);
+        if (cachedData.zaloCdnUrl) {
+          console.log('🔄 [WebSocket] Replacing local path with cached CDN URL:', {
+            msgId: messageId,
+            oldContent: content.substring(0, 50),
+            newContent: cachedData.zaloCdnUrl.substring(0, 50),
+          });
+          content = cachedData.zaloCdnUrl; // Use cached CDN URL
+        }
+        imageCache.delete(messageId);
+      }
+    } else {
+      // Content is neither local path nor CDN URL (might be text)
+      console.log('ℹ️  [WebSocket] Content is text or unknown format:', {
+        msgId: messageId,
+        contentPreview: content.substring(0, 50),
+      });
+    }
+  }
+    
+    // Determine content type
+    let contentType = 'text';
+    let mediaUrl = null;
+    
+    if (attachment) {
+      if (attachment.type === 'image' || attachment.url?.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+        contentType = 'image';
+        mediaUrl = attachment.url;
+      } else if (attachment.type === 'file' || attachment.url) {
+        contentType = 'file';
+        mediaUrl = attachment.url;
+      }
+    }
+    
+    // Get account ID from environment (current logged-in account)
+    const zaloId = process.env.ZALO_USER_ID;
+    if (!zaloId) {
+      console.warn('⚠️  ZALO_USER_ID not set, cannot determine account');
+      return;
+    }
+    
+    // Call Laravel API to save message with ALL IDs
+    // Retry mechanism for reliability
+    const maxRetries = 3;
+    let retries = 0;
+    let response = null;
+    let lastError = null;
+    
+    while (retries < maxRetries) {
+      try {
+        response = await fetch(`${laravelUrl}/api/zalo/messages/receive`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': apiKey,
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify({
+            zalo_id: zaloId,
+            recipient_id: recipientId,
+            recipient_type: recipientType,
+            message_id: messageId,
+            cli_msg_id: cliMsgId,
+            global_msg_id: event.globalMsgId || messageId,
+            real_msg_id: event.realMsgId || messageId,
+            // Send all IDs for accurate finding
+            all_message_ids: event.allMessageIds || {
+              msgId: messageId,
+              cliMsgId: cliMsgId,
+              realMsgId: event.realMsgId || messageId,
+              globalMsgId: event.globalMsgId || messageId,
+            },
+            sender_id: event.senderId || null, // Sender Zalo user ID (for group messages)
+            sender_name: event.senderName || null, // Sender display name (for group messages)
+            content: content,
+            content_type: contentType,
+            media_url: mediaUrl,
+            quote: quote,
+            is_self: event.isSelf || false, // CRITICAL: Indicates if message is from same account (other device)
+            sent_at: event.timestamp || new Date().toISOString()
+          })
+        });
+        
+        if (response.ok) {
+          break; // Success, exit retry loop
+        }
+        
+        // If not OK, retry
+        retries++;
+        if (retries < maxRetries) {
+          const delay = 1000 * retries; // Exponential backoff: 1s, 2s, 3s
+          console.log(`⚠️  [zalo-service] Save message failed, retrying in ${delay}ms (attempt ${retries}/${maxRetries})...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      } catch (error) {
+        lastError = error;
+        retries++;
+        if (retries < maxRetries) {
+          const delay = 1000 * retries;
+          console.log(`⚠️  [zalo-service] Save message error, retrying in ${delay}ms (attempt ${retries}/${maxRetries})...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+    
+    if (!response || !response.ok) {
+      const errorText = response ? await response.text() : (lastError?.message || 'Unknown error');
+      console.error('❌ Failed to save message to Laravel after retries:', {
+        status: response?.status || 'N/A',
+        statusText: response?.statusText || 'N/A',
+        error: errorText,
+        message_id: messageId,
+        cli_msg_id: cliMsgId,
+        retries: retries,
+      });
+      
+      // TODO: Queue message for later processing (implement message queue)
+      // For now, just log the error
+      return;
+    }
+    
+    const result = await response.json();
+    
+    if (result.success) {
+      console.log('✅ Message saved to database:', result.data?.id);
+      
+      // Broadcast via Socket.IO if available
+      try {
+        const { sendToZaloConversation, sendToZaloAccount } = require('./realtimeServer');
+        const accountId = result.data?.zalo_account_id;
+        
+        if (accountId) {
+          // Broadcast to conversation room
+          sendToZaloConversation(accountId, recipientId, 'zalo:message:new', {
+            account_id: accountId,
+            recipient_id: recipientId,
+            recipient_type: recipientType,
+            message: result.data
+          });
+          
+          // Broadcast to account room for conversation list updates
+          sendToZaloAccount(accountId, 'zalo:conversation:updated', {
+            account_id: accountId,
+            recipient_id: recipientId,
+            recipient_type: recipientType,
+            last_message: content,
+            last_message_at: result.data?.sent_at
+          });
+          
+          console.log('📡 Message broadcasted via Socket.IO');
+        }
+      } catch (socketError) {
+        console.warn('⚠️  Socket.IO not available for broadcasting:', socketError.message);
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error handling incoming message:', error.message);
+    if (error.stack) {
+      console.error('   Stack:', error.stack);
+    }
+  }
+}
+
+/**
+ * Stop WebSocket listener
+ */
+function stopWebSocketListener() {
+  // Clear any pending restart
+  if (restartTimeout) {
+    clearTimeout(restartTimeout);
+    restartTimeout = null;
+  }
+  
+  isRestarting = false;
+  
+  if (wsListener) {
+    try {
+      // Remove all event listeners first to prevent duplicate handlers
+      if (typeof wsListener.removeAllListeners === 'function') {
+        wsListener.removeAllListeners();
+      }
+      
+      // Try to stop the listener
+      if (typeof wsListener.stop === 'function') {
+        try {
+          wsListener.stop();
+        } catch (stopError) {
+          // Ignore errors if WebSocket is already closed or not connected
+          // These are expected when stopping a listener that's not fully connected
+          if (!stopError.message.includes('closed before') && 
+              !stopError.message.includes('not connected') &&
+              !stopError.message.includes('WebSocket was closed')) {
+            console.log('⚠️  Error stopping listener (non-critical):', stopError.message);
+          }
+        }
+      } else if (typeof wsListener.close === 'function') {
+        try {
+          wsListener.close();
+        } catch (closeError) {
+          // Ignore errors if already closed
+          if (!closeError.message.includes('closed before') && 
+              !closeError.message.includes('not connected')) {
+            console.log('⚠️  Error closing listener (non-critical):', closeError.message);
+          }
+        }
+      }
+      
+      wsListener = null;
+    } catch (error) {
+      // Ignore errors when stopping - listener might already be stopped
+      const errorMessage = error?.message || String(error);
+      if (!errorMessage.includes('closed before') && 
+          !errorMessage.includes('not connected') &&
+          !errorMessage.includes('WebSocket was closed')) {
+        console.log('⚠️  Error stopping WebSocket listener (non-critical):', errorMessage);
+      }
+      wsListener = null; // Clear reference even if stop failed
+    }
+  }
+}
+
+/**
+ * Start keep-alive interval to maintain connection
+ */
+function startKeepAlive() {
+  // Stop existing interval if any
+  stopKeepAlive();
+  
+  if (!zaloClient || typeof zaloClient.keepAlive !== 'function') {
+    console.log('⚠️  keepAlive method not available, skipping keep-alive');
+    return;
+  }
+  
+  console.log(`🔄 Starting keep-alive (every ${KEEP_ALIVE_INTERVAL / 1000} seconds)...`);
+  
+  keepAliveInterval = setInterval(async () => {
+    try {
+      if (zaloClient && typeof zaloClient.keepAlive === 'function') {
+        await zaloClient.keepAlive();
+        // Silent success - only log errors to reduce noise
+      } else {
+        console.log('⚠️  keepAlive method not available, stopping keep-alive');
+        stopKeepAlive();
+      }
+    } catch (error) {
+      console.error('❌ Keep-alive failed:', error.message);
+      
+      // If keep-alive fails, connection might be lost
+      // Try to reconnect if we have saved credentials
+      if (process.env.ZALO_COOKIE && process.env.ZALO_COOKIE !== '') {
+        console.log('🔄 Attempting to reconnect...');
+        try {
+          const zalo = new Zalo({
+            cookie: process.env.ZALO_COOKIE || '',
+            imei: process.env.ZALO_IMEI || '',
+            userAgent: process.env.ZALO_USER_AGENT || '',
+            selfListen: true, // Enable receiving messages from same account (other devices)
+          });
+          
+          let cookieData;
+          try {
+            cookieData = JSON.parse(process.env.ZALO_COOKIE);
+          } catch (e) {
+            cookieData = process.env.ZALO_COOKIE;
+          }
+          
+          const apiInstance = await zalo.login({
+            cookie: cookieData,
+            imei: process.env.ZALO_IMEI,
+            userAgent: process.env.ZALO_USER_AGENT,
+            language: 'vi'
+          });
+          
+          zaloClient = apiInstance;
+          console.log('✅ Reconnected successfully');
+          
+          // Restart WebSocket listener after reconnect
+          startWebSocketListener();
+        } catch (reconnectError) {
+          console.error('❌ Reconnection failed:', reconnectError.message);
+          // Mark as disconnected
+          isInitialized = false;
+          loginCompleted = false;
+          stopKeepAlive();
+        }
+      } else {
+        // No saved credentials, mark as disconnected
+        console.log('⚠️  No saved credentials, cannot auto-reconnect');
+        isInitialized = false;
+        loginCompleted = false;
+        stopKeepAlive();
+      }
+    }
+  }, KEEP_ALIVE_INTERVAL);
+}
+
+/**
+ * Stop keep-alive interval
+ */
+function stopKeepAlive() {
+  if (keepAliveInterval) {
+    clearInterval(keepAliveInterval);
+    keepAliveInterval = null;
+    console.log('🛑 Keep-alive stopped');
+  }
+}
+
+/**
+ * Reinitialize Zalo (for credential updates)
+ */
+async function reinitializeZalo() {
+  stopKeepAlive();
+  stopWebSocketListener();
+  isInitialized = false;
+  loginCompleted = false;
+  zaloClient = null;
+  return await initializeZalo();
+}
+
+/**
+ * Auto-sync history after login
+ * This is called automatically after successful login to ensure messages are saved
+ */
+async function autoSyncHistory() {
+  try {
+    const laravelUrl = process.env.LARAVEL_URL || 'http://127.0.0.1:8000';
+    const apiKey = process.env.API_SECRET_KEY;
+    const zaloId = process.env.ZALO_USER_ID;
+    
+    if (!apiKey || !zaloId) {
+      console.log('⚠️  Cannot auto-sync history: API key or Zalo ID not set');
+      return;
+    }
+    
+    console.log('🔄 Auto-syncing chat history after login...');
+    
+    // Find account by zalo_id via Laravel API
+    const response = await fetch(`${laravelUrl}/api/zalo/messages/sync-history`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': apiKey,
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({
+        zalo_id: zaloId
+      })
+    });
+    
+    if (response.ok) {
+      const result = await response.json();
+      if (result.success) {
+        console.log('✅ Auto-sync history completed:', result.message);
+      } else {
+        console.log('⚠️  Auto-sync history returned success=false:', result.message);
+      }
+    } else {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      console.log('⚠️  Auto-sync history failed:', response.status, response.statusText);
+      if (errorText) {
+        console.log('   Error details:', errorText.substring(0, 200));
+      }
+    }
+  } catch (error) {
+    console.log('⚠️  Auto-sync history error (non-critical):', error.message);
+  }
+}
+
+module.exports = {
+  initializeZalo,
+  getZaloClient,
+  isZaloReady,
+  reinitializeZalo,
+  startKeepAlive,
+  stopKeepAlive,
+  startWebSocketListener,
+  stopWebSocketListener
+};
+

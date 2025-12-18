@@ -1,0 +1,165 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
+
+class ZaloGroup extends Model
+{
+    use SoftDeletes;
+
+    protected $fillable = [
+        'zalo_id',
+        'zalo_group_id',
+        'name',
+        'description',
+        'avatar_url',
+        'avatar_path',
+        'members_count',
+        'admin_ids',
+        'creator_id',
+        'type',
+        'version',
+        'metadata',
+        'last_sync_at',
+    ];
+
+    protected $casts = [
+        'admin_ids' => 'array',
+        'metadata' => 'array',
+        'last_sync_at' => 'datetime',
+        'version' => 'string', // Version is stored as string to support long numbers
+    ];
+
+    // Relationships
+
+    /**
+     * Many-to-Many relationship with branches through pivot table
+     * One group can be assigned to multiple branches
+     */
+    public function branches()
+    {
+        return $this->belongsToMany(Branch::class, 'zalo_group_branches', 'zalo_group_id', 'branch_id')
+                    ->withPivot('department_id', 'assigned_by', 'assigned_at')
+                    ->withTimestamps();
+    }
+
+    /**
+     * Get the primary branch (for backwards compatibility)
+     * Returns the first assigned branch
+     */
+    public function branch()
+    {
+        return $this->branches()->first();
+    }
+
+    /**
+     * Get the primary department (for backwards compatibility)
+     * Returns the department from the first branch assignment
+     */
+    public function department()
+    {
+        $firstBranchAssignment = $this->branches()->first();
+        if ($firstBranchAssignment && $firstBranchAssignment->pivot->department_id) {
+            return Department::find($firstBranchAssignment->pivot->department_id);
+        }
+        return null;
+    }
+
+    public function members()
+    {
+        return $this->hasMany(ZaloGroupMember::class);
+    }
+
+    // Scopes
+
+    /**
+     * Scope: Groups for a specific Zalo account (by zalo_id)
+     */
+    public function scopeForAccount($query, $zaloId)
+    {
+        return $query->where('zalo_id', $zaloId);
+    }
+
+    /**
+     * Scope: Groups assigned to a specific branch (via pivot table)
+     */
+    public function scopeForBranch($query, $branchId)
+    {
+        if (!$branchId) {
+            return $query;
+        }
+
+        return $query->where(function($q) use ($branchId) {
+            // Groups assigned to this branch OR global groups (no assignments)
+            $q->whereHas('branches', function($subQ) use ($branchId) {
+                $subQ->where('branch_id', $branchId);
+            })->orWhereDoesntHave('branches'); // Include global groups
+        });
+    }
+
+    /**
+     * Scope: Groups assigned to a specific department (via pivot table)
+     */
+    public function scopeForDepartment($query, $departmentId)
+    {
+        if (!$departmentId) {
+            return $query;
+        }
+
+        return $query->whereHas('branches', function($subQ) use ($departmentId) {
+            $subQ->where('department_id', $departmentId);
+        });
+    }
+
+    /**
+     * Scope: Groups accessible by user based on permissions
+     * - Super-admin OR users with zalo.view_groups → see ALL groups
+     * - Users with zalo.all_conversation_management → see ALL groups including global
+     * - Other users → see only groups assigned to their branch/department via pivot table
+     */
+    public function scopeAccessibleBy($query, $user)
+    {
+        // Super-admin or users with view_groups permission see all
+        if ($user->hasRole('super-admin') || $user->hasPermission('zalo.view_groups')) {
+            return $query;
+        }
+
+        // Users with all_conversation_management see all groups including global
+        if ($user->hasPermission('zalo.all_conversation_management')) {
+            return $query;
+        }
+
+        // Get user's branches and departments
+        $userBranchIds = $user->branches()->pluck('branches.id')->toArray();
+        $userDepartmentIds = $user->departments()
+            ->where(function ($q) {
+                $q->where('department_user.is_head', true)
+                  ->orWhere('department_user.is_deputy', true);
+            })
+            ->pluck('departments.id')
+            ->toArray();
+
+        // Show groups assigned to user's branches or departments (via pivot), or global groups
+        return $query->where(function ($q) use ($userBranchIds, $userDepartmentIds) {
+            // Global groups (no assignments in pivot table)
+            $q->whereDoesntHave('branches')
+              // OR groups assigned to user's branches
+              ->orWhereHas('branches', function($subQ) use ($userBranchIds, $userDepartmentIds) {
+                  $subQ->where(function($innerQ) use ($userBranchIds, $userDepartmentIds) {
+                      $innerQ->whereIn('branch_id', $userBranchIds)
+                             ->orWhereIn('department_id', $userDepartmentIds);
+                  });
+              });
+        });
+    }
+
+    /**
+     * Scope: Global groups (not assigned to any branch or department via pivot table)
+     */
+    public function scopeGlobal($query)
+    {
+        return $query->whereDoesntHave('branches');
+    }
+}

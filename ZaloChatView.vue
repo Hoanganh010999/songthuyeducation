@@ -1,0 +1,4231 @@
+<template>
+  <div class="flex flex-col h-full overflow-hidden">
+    <!-- Header -->
+    <div class="px-6 py-4 border-b border-gray-200 bg-white flex-shrink-0">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-full overflow-hidden bg-gray-200">
+            <img 
+              v-if="item.avatar_url" 
+              :src="item.avatar_url" 
+              :alt="item.name"
+              class="w-full h-full object-cover"
+            />
+            <div v-else class="w-full h-full flex items-center justify-center bg-blue-100">
+              <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+            </div>
+          </div>
+          <div>
+            <h3 class="font-semibold text-gray-900">{{ item.name || item.displayName }}</h3>
+            <p v-if="itemType === 'groups'" class="text-sm text-gray-500">
+              {{ item.members_count || 0 }} {{ t('zalo.members') }}
+            </p>
+            <p v-else class="text-sm text-gray-500">
+              {{ item.phone || '' }}
+            </p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <!-- Refresh/Sync History button -->
+          <button
+            @click="handleRefreshMessages"
+            :disabled="loadingMessages"
+            class="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-50"
+            :title="t('zalo.refresh_messages')"
+          >
+            <svg
+              class="w-5 h-5 text-gray-600"
+              :class="{ 'animate-spin': loadingMessages }"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+          <button class="p-2 rounded-lg hover:bg-gray-100">
+            <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </button>
+          <!-- More options dropdown -->
+          <div class="relative" ref="moreOptionsRef">
+            <button
+              @click="showMoreOptions = !showMoreOptions"
+              class="p-2 rounded-lg hover:bg-gray-100"
+            >
+              <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+              </svg>
+            </button>
+            <!-- Dropdown menu -->
+            <div
+              v-if="showMoreOptions"
+              class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50"
+            >
+              <button
+                @click="handleDeleteConversation"
+                class="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+              >
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                {{ t('zalo.delete_conversation') || 'Xóa cuộc hội thoại' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Messages area -->
+    <div ref="messagesContainer" class="flex-1 overflow-y-auto bg-gray-50 px-6 py-4 space-y-4 min-h-0 relative">
+      <!-- Loading overlay with spinner -->
+      <div v-if="loadingMessages" class="absolute inset-0 bg-gray-50 bg-opacity-90 flex items-center justify-center z-10">
+        <div class="text-center">
+          <svg class="inline w-10 h-10 text-blue-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          <p class="mt-2 text-sm text-gray-600">{{ t('common.loading') }}...</p>
+        </div>
+      </div>
+      <div v-else-if="messages.length === 0" class="text-center py-8 text-gray-500">
+        {{ t('zalo.no_messages') }}
+      </div>
+      <template v-else>
+        <!-- Loading indicator for older messages -->
+        <div v-if="loadingOlderMessages" class="text-center py-3 mb-2">
+          <div class="inline-flex items-center gap-2 px-4 py-2 bg-white rounded-lg shadow-sm border border-gray-200">
+            <svg class="w-4 h-4 text-blue-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <span class="text-sm text-gray-600">Đang tải tin nhắn cũ hơn...</span>
+          </div>
+        </div>
+
+        <div
+          v-for="message in messages"
+          :key="message.id"
+          :id="`message-${message.id}`"
+          class="flex gap-2 group"
+          :class="message.type === 'sent' ? 'justify-end' : 'justify-start'"
+        >
+          <!-- Avatar for received group messages -->
+          <div
+            v-if="message.type === 'received' && message.recipient_type === 'group'"
+            class="flex-shrink-0"
+          >
+            <img
+              v-if="message.sender_avatar || message.avatar_url"
+              :src="message.sender_avatar || message.avatar_url"
+              :alt="message.sender_name"
+              class="w-8 h-8 rounded-full"
+            />
+            <div
+              v-else
+              class="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center text-xs font-semibold text-white"
+            >
+              {{ (message.sender_name || 'U').charAt(0).toUpperCase() }}
+            </div>
+          </div>
+          
+          <div
+            class="max-w-md relative flex flex-col"
+            :class="message.type === 'sent' ? 'items-end' : 'items-start'"
+          >
+            <!-- Sender name for group messages (received only) -->
+            <div 
+              v-if="message.type === 'received' && message.recipient_type === 'group' && message.sender_name"
+              class="text-xs font-semibold text-gray-600 mb-1 px-1"
+            >
+              {{ message.sender_name }}
+            </div>
+            
+            <!-- Message bubble (ONLY for non-file/folder/video messages or when has quote) -->
+            <div
+              v-if="(message.content_type !== 'file' && message.content_type !== 'folder' && message.content_type !== 'video') || message.reply_to || message.quote_data"
+              class="px-4 py-2 rounded-lg relative"
+              :class="message.type === 'sent'
+                ? 'bg-blue-600 text-white'
+                : 'bg-white text-gray-900 border border-gray-200'"
+            >
+              <!-- Quoted message (if reply) -->
+              <div 
+                v-if="message.reply_to || message.quote_data"
+                @click="scrollToQuotedMessage(message.reply_to?.id || message.reply_to?.message_id)"
+                class="mb-2 pb-2 border-l-2 pl-2 cursor-pointer hover:bg-gray-50 transition-colors rounded"
+                :class="message.type === 'sent' 
+                  ? 'border-blue-300' 
+                  : 'border-gray-300'"
+              >
+                <p class="text-xs font-semibold opacity-75 mb-1">
+                  {{ message.reply_to?.sender_name || 'Unknown' }}
+                </p>
+                <p class="text-xs opacity-75 line-clamp-2">
+                  {{ formatMessageContent(message.reply_to?.content || message.quote_data?.msg || message.quote_data?.content || '', message.reply_to?.content_type || message.quote_data?.cliMsgType) }}
+                </p>
+              </div>
+              
+              <!-- Special message card (Event/Birthday) with thumbnail -->
+              <div v-if="getSpecialMessageInfo(message)" class="special-msg-card">
+                <div
+                  :class="[
+                    'flex items-start gap-2 p-2 rounded-lg border max-w-xs',
+                    getSpecialMessageInfo(message).type === 'event'
+                      ? 'bg-blue-50 border-blue-200'
+                      : 'bg-pink-50 border-pink-200'
+                  ]"
+                >
+                  <!-- Thumbnail -->
+                  <img
+                    v-if="getSpecialMessageInfo(message).thumb"
+                    :src="getSpecialMessageInfo(message).thumb"
+                    alt=""
+                    class="w-12 h-12 rounded object-cover flex-shrink-0"
+                    @click="openLightbox(getSpecialMessageInfo(message).thumb)"
+                  />
+                  <!-- Info -->
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-1">
+                      <span>{{ getSpecialMessageInfo(message).icon }}</span>
+                      <span
+                        :class="[
+                          'text-sm font-medium',
+                          getSpecialMessageInfo(message).type === 'event' ? 'text-blue-800' : 'text-pink-800'
+                        ]"
+                      >
+                        {{ getSpecialMessageInfo(message).title }}
+                      </span>
+                    </div>
+                    <p
+                      v-if="getSpecialMessageInfo(message).description && getSpecialMessageInfo(message).description !== getSpecialMessageInfo(message).title"
+                      :class="[
+                        'text-xs mt-0.5 line-clamp-2',
+                        getSpecialMessageInfo(message).type === 'event' ? 'text-blue-600' : 'text-pink-600'
+                      ]"
+                    >
+                      {{ getSpecialMessageInfo(message).description }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Regular message content - hide for special messages, files, folders, videos, stickers, images -->
+              <div
+                v-else-if="message.content_type !== 'file' && message.content_type !== 'folder' && message.content_type !== 'video' && message.content_type !== 'sticker' && message.content_type !== 'image'"
+                class="text-sm whitespace-pre-wrap message-content"
+                v-html="formatMessageContentWithStyles(message.content, message.content_type, message.metadata?.styles)"
+              ></div>
+              <!-- Debug: Show metadata for troubleshooting -->
+              <div v-if="false" class="text-xs text-gray-400 mt-1">
+                Debug: metadata={{ JSON.stringify(message.metadata) }}
+              </div>
+
+              <!-- Image container - only for regular images, NOT special messages -->
+              <div
+                v-if="message.content_type === 'image' && (message.media_url || message.content) && !getSpecialMessageInfo(message)"
+                @click="openLightbox(message.media_url || message.content)"
+                class="zalo-image-container"
+              >
+                <img
+                  :src="message.media_url || message.content"
+                  alt="Image"
+                  class="zalo-image-preview"
+                  @error="handleImageError"
+                  @load="handleImageLoad"
+                />
+              </div>
+            </div>
+            
+            <!-- Folder attachment display (like Zalo app) -->
+            <div
+              v-if="message.content_type === 'folder' && (message.media_url || message.metadata?.file?.href)"
+              class="mt-2"
+            >
+              <a
+                :href="message.media_url || message.metadata?.file?.href"
+                :download="message.metadata?.folder_name || message.content || 'folder.zip'"
+                target="_blank"
+                rel="noreferrer noopener"
+                @click="handleFolderDownload($event, message)"
+                class="flex items-center gap-3 p-3 rounded-lg border transition-all hover:bg-gray-50"
+                :class="message.type === 'sent' ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'"
+              >
+                <!-- Folder icon -->
+                <div class="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded bg-orange-500 text-white">
+                  <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                  </svg>
+                </div>
+
+                <!-- Folder info -->
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium truncate" :class="message.type === 'sent' ? 'text-blue-900' : 'text-gray-900'">
+                    {{ message.metadata?.folder_name || message.content || 'Folder' }}
+                  </p>
+                  <p class="text-xs" :class="message.type === 'sent' ? 'text-blue-600' : 'text-gray-500'">
+                    {{ message.metadata?.file_count || 0 }} {{ t('zalo.files') || 'files' }} - {{ t('zalo.click_to_download') || 'Click to download' }}
+                  </p>
+                </div>
+
+                <!-- Download icon -->
+                <div class="flex-shrink-0">
+                  <svg class="w-5 h-5" :class="message.type === 'sent' ? 'text-blue-600' : 'text-gray-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                </div>
+              </a>
+            </div>
+
+            <!-- File attachment display (like Zalo app) -->
+            <div
+              v-if="message.content_type === 'file' && (message.media_url || message.metadata?.file?.href)"
+              class="mt-2"
+            >
+              <a
+                :href="message.media_url || message.metadata?.file?.href"
+                :download="message.metadata?.file?.title || message.content || 'file'"
+                target="_blank"
+                rel="noreferrer noopener"
+                class="flex items-center gap-3 p-3 rounded-lg border transition-all hover:bg-gray-50"
+                :class="message.type === 'sent' ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'"
+              >
+                <!-- File icon -->
+                <div class="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded bg-blue-500 text-white">
+                  <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                </div>
+
+                <!-- File info -->
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium truncate" :class="message.type === 'sent' ? 'text-blue-900' : 'text-gray-900'">
+                    {{ getMediaTitle(message) }}
+                  </p>
+                  <p class="text-xs" :class="message.type === 'sent' ? 'text-blue-600' : 'text-gray-500'">
+                    {{ t('zalo.click_to_download') }}
+                  </p>
+                </div>
+
+                <!-- Download icon -->
+                <div class="flex-shrink-0">
+                  <svg class="w-5 h-5" :class="message.type === 'sent' ? 'text-blue-600' : 'text-gray-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                </div>
+              </a>
+            </div>
+
+            <!-- Video attachment display -->
+            <div
+              v-if="message.content_type === 'video' && (message.media_url || message.metadata?.file?.href)"
+              class="mt-2"
+            >
+              <a
+                :href="message.media_url || message.metadata?.file?.href"
+                target="_blank"
+                rel="noreferrer noopener"
+                class="flex items-center gap-3 p-3 rounded-lg border transition-all hover:bg-gray-50"
+                :class="message.type === 'sent' ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'"
+              >
+                <!-- Video icon (play button) -->
+                <div class="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded bg-red-500 text-white">
+                  <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z"/>
+                  </svg>
+                </div>
+
+                <!-- Video info -->
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium truncate" :class="message.type === 'sent' ? 'text-blue-900' : 'text-gray-900'">
+                    {{ getMediaTitle(message) }}
+                  </p>
+                  <p class="text-xs" :class="message.type === 'sent' ? 'text-blue-600' : 'text-gray-500'">
+                    {{ t('zalo.click_to_view') || 'Click to view video' }}
+                  </p>
+                </div>
+
+                <!-- Play icon -->
+                <div class="flex-shrink-0">
+                  <svg class="w-5 h-5" :class="message.type === 'sent' ? 'text-blue-600' : 'text-gray-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+              </a>
+            </div>
+
+            <!-- Sticker display -->
+            <div
+              v-if="message.content_type === 'sticker'"
+              class="inline-block mt-2"
+            >
+              <div v-if="message.metadata?.sticker?.stickerUrl || message.metadata?.sticker?.stickerWebpUrl || message.media_url" class="sticker-container">
+                <img
+                  :src="message.metadata?.sticker?.stickerUrl || message.metadata?.sticker?.stickerWebpUrl || message.media_url"
+                  :alt="message.metadata?.sticker?.text || message.content || 'Sticker'"
+                  class="max-w-[150px] max-h-[150px] object-contain cursor-pointer hover:scale-110 transition-transform"
+                  @error="handleImageError"
+                />
+              </div>
+              <div v-else class="flex items-center gap-2 px-3 py-2 bg-gray-100 rounded-lg text-gray-600 text-sm">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>{{ message.content || 'Sticker' }}</span>
+                <span v-if="message.metadata?.sticker" class="text-xs text-gray-400">
+                  (ID: {{ message.metadata.sticker.id }})
+                </span>
+              </div>
+            </div>
+
+            <!-- Link display (if not a file) -->
+            <div
+              v-if="message.content_type === 'link' && message.media_url"
+              class="px-4 py-2 rounded-lg relative mt-2"
+              :class="message.type === 'sent'
+                ? 'bg-blue-600 text-white'
+                : 'bg-white text-gray-900 border border-gray-200'"
+            >
+              <a 
+                :href="message.media_url" 
+                target="_blank"
+                :class="message.type === 'sent' ? 'text-blue-200 underline' : 'text-blue-600 underline'"
+              >
+                {{ t('zalo.open_link') }}
+              </a>
+            </div>
+            
+            <!-- Reactions (OUTSIDE bubble - for ALL message types) -->
+            <div 
+              v-if="message.reactions && message.reactions.length > 0" 
+              class="flex flex-wrap gap-1 mt-1"
+              :class="message.type === 'sent' ? 'justify-end' : 'justify-start'"
+            >
+              <button
+                v-for="reaction in message.reactions"
+                :key="reaction.reaction"
+                @click="showReactionUsers(message.id, reaction)"
+                class="px-2 py-0.5 rounded-full text-xs flex items-center gap-1 bg-white border border-gray-200 hover:bg-gray-50 shadow-sm"
+                :title="`${reaction.count} người đã ${reaction.reaction}`"
+              >
+                <span>{{ getReactionEmoji(reaction.reaction) }}</span>
+                <span class="text-gray-700 font-medium">{{ reaction.count }}</span>
+              </button>
+            </div>
+            
+            <!-- Timestamp and actions (BELOW reactions) -->
+            <div 
+              class="flex items-center justify-between gap-2 mt-1"
+              :class="message.type === 'sent' ? 'flex-row-reverse' : 'flex-row'"
+            >
+              <p class="text-xs text-gray-500">
+                {{ formatTime(message.sent_at || message.created_at) }}
+              </p>
+              <!-- Action buttons (show on hover or when picker is open) -->
+              <div class="flex items-center gap-1 transition-opacity" :class="showReactionPickerFor === message.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'">
+                  <button
+                    @click="startReply(message)"
+                    class="p-1 rounded hover:bg-opacity-20"
+                    :class="message.type === 'sent' ? 'hover:bg-white' : 'hover:bg-gray-200'"
+                    :title="t('zalo.reply')"
+                  >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                    </svg>
+                  </button>
+                  <div class="relative" style="z-index: 10;">
+                    <button
+                      @click.stop="toggleReactionPicker(message.id)"
+                      class="p-1 rounded hover:bg-opacity-20"
+                      :class="message.type === 'sent' ? 'hover:bg-white' : 'hover:bg-gray-200'"
+                      :title="t('zalo.react')"
+                    >
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </button>
+                    <!-- Reaction picker dropdown -->
+                    <div
+                      v-if="showReactionPickerFor === message.id"
+                      class="reaction-picker-container absolute bottom-full mb-2 bg-white rounded-lg shadow-xl border border-gray-300 p-2"
+                      :class="message.type === 'sent' ? 'right-0' : 'left-0'"
+                      style="min-width: 200px; z-index: 40; pointer-events: auto; max-width: calc(100vw - 400px);"
+                      @click.stop
+                    >
+                      <div class="grid grid-cols-6 gap-1">
+                        <button
+                          v-for="reaction in availableReactions"
+                          :key="reaction.icon"
+                          @click.stop="addReaction(message, reaction.icon)"
+                          class="p-2 hover:bg-gray-100 rounded text-lg transition-colors cursor-pointer"
+                          :title="reaction.name"
+                        >
+                          {{ reaction.emoji }}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <!-- Recall button (only for sent messages within 5 minutes) -->
+                  <button
+                    v-if="message.type === 'sent' && canRecallMessage(message)"
+                    @click="handleRecallMessage(message)"
+                    class="p-1 rounded hover:bg-white hover:bg-opacity-20"
+                    :title="t('zalo.recall_message') || 'Thu hồi tin nhắn'"
+                  >
+                    <svg class="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" transform="scale(-1, 1) translate(-24, 0)" />
+                    </svg>
+                  </button>
+                </div>
+            </div>
+          </div>
+        </div>
+      </template>
+      
+      <!-- Reply input (shown when replying) -->
+      <div
+        v-if="replyingTo"
+        class="px-6 py-3 border-t border-gray-200 bg-gray-50 flex-shrink-0"
+      >
+        <div class="flex items-start gap-2">
+          <div class="flex-1">
+            <div class="mb-2 px-3 py-2 bg-white rounded-lg border-l-2 border-blue-500">
+              <p class="text-xs font-semibold text-gray-600 mb-1">
+                {{ t('zalo.replying_to') || 'Replying to' }}: {{ replyingTo.sender_name || 'Unknown' }}
+              </p>
+              <p class="text-xs text-gray-500 line-clamp-2">
+                {{ replyingTo.content }}
+              </p>
+            </div>
+            <textarea
+              v-model="replyText"
+              @keydown.enter.exact.prevent="sendReply"
+              @keydown.enter.shift.exact="replyText += '\n'"
+              :placeholder="t('zalo.type_reply') || 'Type your reply...'"
+              rows="1"
+              class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+              style="min-height: 40px; max-height: 120px;"
+            ></textarea>
+          </div>
+          <div class="flex items-end gap-2">
+            <button
+              @click="cancelReply"
+              class="p-2 text-gray-600 hover:text-gray-900"
+              :title="t('common.cancel') || 'Cancel'"
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <button
+              @click="sendReply"
+              :disabled="!replyText.trim() || sendingReply"
+              class="p-2 rounded-lg transition-colors"
+              :class="replyText.trim() && !sendingReply
+                ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                : 'bg-gray-200 text-gray-400 cursor-not-allowed'"
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input area -->
+    <div class="px-6 py-4 border-t border-gray-200 bg-white flex-shrink-0">
+      <!-- Tools row (top) -->
+      <div class="flex items-center gap-2 pb-2 border-b border-gray-100">
+        <!-- File upload button -->
+        <label class="p-2 text-gray-600 hover:text-gray-900 cursor-pointer" :title="t('zalo.upload_file') || 'Gửi file'">
+          <input type="file" ref="fileInput" @change="handleFileSelect" class="hidden" accept=".pdf,.doc,.docx,.xls,.xlsx,.zip,.rar">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+          </svg>
+        </label>
+        <!-- Image upload button -->
+        <label class="p-2 text-gray-600 hover:text-gray-900 cursor-pointer" :title="t('zalo.upload_image') || 'Gửi ảnh'">
+          <input type="file" ref="imageInput" @change="handleImageSelect" class="hidden" accept="image/*">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+        </label>
+        <!-- Video upload button -->
+        <label class="p-2 text-gray-600 hover:text-gray-900 cursor-pointer" :title="t('zalo.upload_video') || 'Gửi video'">
+          <input type="file" ref="videoInput" @change="handleVideoSelect" class="hidden" accept="video/*">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+          </svg>
+        </label>
+        <!-- Audio upload button -->
+        <label class="p-2 text-gray-600 hover:text-gray-900 cursor-pointer" :title="t('zalo.upload_audio') || 'Gửi audio'">
+          <input type="file" ref="audioInput" @change="handleAudioSelect" class="hidden" accept="audio/*">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+          </svg>
+        </label>
+        <!-- Folder upload button -->
+        <label class="p-2 text-gray-600 hover:text-gray-900 cursor-pointer" :title="t('zalo.upload_folder') || 'Gửi folder'">
+          <input type="file" ref="folderInput" @change="handleFolderSelect" class="hidden" webkitdirectory directory multiple>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+          </svg>
+        </label>
+        <!-- Rich text editor toggle button -->
+        <button
+          @click="toggleEditor"
+          class="p-2 rounded-lg transition-colors cursor-pointer"
+          :class="showEditor ? 'text-blue-600 bg-blue-100 hover:bg-blue-200' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'"
+          :title="t('zalo.rich_text_editor') || 'Soạn thảo văn bản'"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+        </button>
+        <!-- Sticker button -->
+        <button
+          @click="showStickerPicker = !showStickerPicker"
+          class="p-2 text-gray-600 hover:text-gray-900 cursor-pointer relative"
+          :class="{ 'text-blue-600': showStickerPicker }"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </button>
+        <!-- Event/Reminder button -->
+        <button
+          @click="showEventModal = true"
+          class="p-2 text-gray-600 hover:text-gray-900 cursor-pointer"
+          :title="t('zalo.create_event') || 'Tạo sự kiện'"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Rich text editor (expanded upward when showEditor is true) -->
+      <div v-if="showEditor" class="mb-2 border border-gray-300 rounded-lg bg-white shadow-sm">
+        <!-- Editor toolbar -->
+        <div class="flex items-center gap-1 p-2 border-b border-gray-200 bg-gray-50">
+          <button
+            @click="applyStyle('bold')"
+            type="button"
+            class="p-1.5 rounded hover:bg-gray-200 font-bold"
+            :class="{ 'bg-gray-300': editorStyles.bold }"
+            :title="t('zalo.bold') || 'Đậm'"
+          >
+            <span class="text-sm">B</span>
+          </button>
+          <button
+            @click="applyStyle('italic')"
+            type="button"
+            class="p-1.5 rounded hover:bg-gray-200 italic"
+            :class="{ 'bg-gray-300': editorStyles.italic }"
+            :title="t('zalo.italic') || 'Nghiêng'"
+          >
+            <span class="text-sm">I</span>
+          </button>
+          <button
+            @click="applyStyle('underline')"
+            type="button"
+            class="p-1.5 rounded hover:bg-gray-200 underline"
+            :class="{ 'bg-gray-300': editorStyles.underline }"
+            :title="t('zalo.underline') || 'Gạch chân'"
+          >
+            <span class="text-sm">U</span>
+          </button>
+          <button
+            @click="insertBulletList"
+            type="button"
+            class="p-1.5 rounded hover:bg-gray-200"
+            :title="t('zalo.bullet_list') || 'Danh sách'"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 6h13M8 12h13m-13 6h13M3 6h.01M3 12h.01M3 18h.01" />
+            </svg>
+          </button>
+          <div class="w-px h-6 bg-gray-300 mx-1"></div>
+          <button
+            @click="applyColor('red')"
+            type="button"
+            class="p-1.5 rounded hover:bg-gray-200"
+            :class="{ 'bg-gray-300': editorStyles.color === 'red' }"
+            :title="t('zalo.red') || 'Đỏ'"
+          >
+            <div class="w-4 h-4 rounded bg-red-500"></div>
+          </button>
+          <button
+            @click="applyColor('orange')"
+            type="button"
+            class="p-1.5 rounded hover:bg-gray-200"
+            :class="{ 'bg-gray-300': editorStyles.color === 'orange' }"
+            :title="t('zalo.orange') || 'Cam'"
+          >
+            <div class="w-4 h-4 rounded bg-orange-500"></div>
+          </button>
+          <button
+            @click="applyColor('yellow')"
+            type="button"
+            class="p-1.5 rounded hover:bg-gray-200"
+            :class="{ 'bg-gray-300': editorStyles.color === 'yellow' }"
+            :title="t('zalo.yellow') || 'Vàng'"
+          >
+            <div class="w-4 h-4 rounded bg-yellow-500"></div>
+          </button>
+          <button
+            @click="applyColor('green')"
+            type="button"
+            class="p-1.5 rounded hover:bg-gray-200"
+            :class="{ 'bg-gray-300': editorStyles.color === 'green' }"
+            :title="t('zalo.green') || 'Xanh lá'"
+          >
+            <div class="w-4 h-4 rounded bg-green-500"></div>
+          </button>
+        </div>
+        <!-- Editor content area -->
+        <div
+          ref="editorContent"
+          contenteditable="true"
+          @input="handleEditorInput"
+          @keydown.enter.exact.prevent="handleEditorEnter"
+          @keydown.enter.shift.exact.prevent="sendMessage"
+          :placeholder="t('zalo.type_message')"
+          class="px-4 py-3 min-h-[120px] max-h-[300px] overflow-y-auto focus:outline-none editor-with-lists"
+          style="white-space: pre-wrap;"
+        >
+        </div>
+      </div>
+
+      <!-- Text input row (bottom) -->
+      <div class="flex items-end gap-2 mt-2">
+        <div class="flex-1">
+          <!-- Textarea (when editor is hidden) -->
+          <textarea
+            v-if="!showEditor"
+            ref="textareaRef"
+            v-model="messageText"
+            @keydown.enter.exact.prevent="sendMessage"
+            @keydown.enter.shift.exact="messageText += '\n'"
+            :placeholder="t('zalo.type_message')"
+            rows="1"
+            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+            style="min-height: 40px; max-height: 120px;"
+          ></textarea>
+        </div>
+        <button
+          @click="sendMessage"
+          :disabled="(!messageText.trim() && !selectedFile && !selectedImage && !selectedVideo && !selectedAudio && !selectedFolder) || sending || uploading"
+          class="p-2 rounded-lg transition-colors"
+          :class="(messageText.trim() || selectedFile || selectedImage || selectedVideo || selectedAudio || selectedFolder) && !sending && !uploading
+            ? 'bg-blue-600 text-white hover:bg-blue-700' 
+            : 'bg-gray-200 text-gray-400 cursor-not-allowed'"
+        >
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+          </svg>
+        </button>
+      </div>
+      <!-- Preview uploaded file/image/video/audio/folder -->
+      <div v-if="uploading || selectedFile || selectedImage || selectedVideo || selectedAudio || selectedFolder" class="mt-2 flex flex-wrap items-center gap-2">
+        <div v-if="selectedFile" class="flex items-center gap-2 px-3 py-2 bg-gray-100 rounded-lg">
+          <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+          </svg>
+          <span class="text-sm text-gray-700">{{ selectedFile.name }}</span>
+          <button @click="clearFile" class="text-gray-500 hover:text-gray-700">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div v-if="selectedImage" class="flex items-center gap-2 px-3 py-2 bg-gray-100 rounded-lg">
+          <img :src="selectedImagePreview" class="w-10 h-10 object-cover rounded" alt="Preview">
+          <span class="text-sm text-gray-700">{{ selectedImage.name }}</span>
+          <button @click="clearImage" class="text-gray-500 hover:text-gray-700">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div v-if="selectedVideo" class="flex items-center gap-2 px-3 py-2 bg-gray-100 rounded-lg">
+          <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+          </svg>
+          <span class="text-sm text-gray-700">{{ selectedVideo.name }}</span>
+          <button @click="clearVideo" class="text-gray-500 hover:text-gray-700">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div v-if="selectedAudio" class="flex items-center gap-2 px-3 py-2 bg-gray-100 rounded-lg">
+          <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+          </svg>
+          <span class="text-sm text-gray-700">{{ selectedAudio.name }}</span>
+          <button @click="clearAudio" class="text-gray-500 hover:text-gray-700">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div v-if="selectedFolder && selectedFolder.length > 0" class="flex items-center gap-2 px-3 py-2 bg-gray-100 rounded-lg">
+          <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+          </svg>
+          <span class="text-sm text-gray-700">{{ selectedFolder.length }} {{ t('zalo.files') || 'files' }}</span>
+          <button @click="clearFolder" class="text-gray-500 hover:text-gray-700">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div v-if="uploading" class="text-sm text-gray-500">
+          {{ t('common.uploading') }}...
+        </div>
+      </div>
+
+      <!-- Sticker Picker -->
+      <div class="relative">
+        <ZaloStickerPicker
+          :show="showStickerPicker"
+          :account-id="accountId"
+          @close="showStickerPicker = false"
+          @select="handleStickerSelect"
+        />
+      </div>
+    </div>
+
+    <!-- Event Creation Modal -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div
+          v-if="showEventModal"
+          @click="showEventModal = false"
+          class="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4"
+        >
+          <div
+            @click.stop
+            class="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden"
+          >
+            <!-- Modal Header -->
+            <div class="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 flex items-center justify-between">
+              <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-full bg-white bg-opacity-20 flex items-center justify-center">
+                  <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                </div>
+                <h3 class="text-lg font-semibold text-white">{{ t('zalo.create_event') || 'Tạo sự kiện' }}</h3>
+              </div>
+              <button
+                @click="showEventModal = false"
+                class="text-white hover:text-gray-200 transition-colors"
+              >
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <!-- Modal Body -->
+            <div class="p-6 space-y-4">
+              <!-- Event Title -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                  {{ t('zalo.event_title') || 'Tiêu đề sự kiện' }} <span class="text-red-500">*</span>
+                </label>
+                <input
+                  v-model="eventForm.title"
+                  type="text"
+                  :placeholder="t('zalo.event_title_placeholder') || 'Nhập tiêu đề sự kiện...'"
+                  class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  maxlength="100"
+                />
+              </div>
+
+              <!-- Event DateTime -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                  {{ t('zalo.event_time') || 'Thời gian' }} <span class="text-red-500">*</span>
+                </label>
+                <input
+                  v-model="eventForm.datetime"
+                  type="datetime-local"
+                  class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  :min="minEventDateTime"
+                />
+              </div>
+
+              <!-- Emoji Selector -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                  {{ t('zalo.event_emoji') || 'Biểu tượng' }}
+                </label>
+                <div class="flex flex-wrap gap-2">
+                  <button
+                    v-for="emoji in eventEmojis"
+                    :key="emoji"
+                    @click="eventForm.emoji = emoji"
+                    class="w-10 h-10 text-xl rounded-lg border-2 transition-all hover:scale-110"
+                    :class="eventForm.emoji === emoji
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 hover:border-gray-300'"
+                  >
+                    {{ emoji }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Repeat Options -->
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                  {{ t('zalo.event_repeat') || 'Lặp lại' }}
+                </label>
+                <select
+                  v-model="eventForm.repeat"
+                  class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="0">{{ t('zalo.repeat_none') || 'Không lặp lại' }}</option>
+                  <option value="1">{{ t('zalo.repeat_daily') || 'Hàng ngày' }}</option>
+                  <option value="2">{{ t('zalo.repeat_weekly') || 'Hàng tuần' }}</option>
+                  <option value="3">{{ t('zalo.repeat_monthly') || 'Hàng tháng' }}</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="px-6 py-4 bg-gray-50 flex justify-end gap-3">
+              <button
+                @click="showEventModal = false"
+                class="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                {{ t('common.cancel') || 'Hủy' }}
+              </button>
+              <button
+                @click="createEvent"
+                :disabled="!eventForm.title.trim() || !eventForm.datetime || creatingEvent"
+                class="px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
+                :class="eventForm.title.trim() && eventForm.datetime && !creatingEvent
+                  ? 'bg-blue-600 text-white hover:bg-blue-700'
+                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'"
+              >
+                <svg v-if="creatingEvent" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {{ creatingEvent ? (t('common.creating') || 'Đang tạo...') : (t('zalo.create_event') || 'Tạo sự kiện') }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Lightbox for full-size image -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div 
+          v-if="showLightbox"
+          @click="closeLightbox"
+          class="fixed inset-0 z-40 bg-black bg-opacity-90 flex items-center justify-center p-4"
+        >
+          <div class="relative max-w-7xl max-h-screen">
+            <!-- Close button -->
+            <button
+              @click.stop="closeLightbox"
+              class="absolute top-4 right-4 text-white hover:text-gray-300 bg-black bg-opacity-50 rounded-full p-2 z-10"
+            >
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            
+            <!-- Full-size image -->
+            <img 
+              :src="lightboxImage"
+              alt="Full size"
+              class="max-w-full max-h-screen object-contain rounded-lg"
+              @click.stop
+            />
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+  </div>
+</template>
+
+<style scoped>
+.fade-enter-active, .fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+.fade-enter-from, .fade-leave-to {
+  opacity: 0;
+}
+</style>
+
+<script setup>
+import { ref, computed, onMounted, onUnmounted, watch, nextTick, inject } from 'vue';
+import { useI18n } from '../../../composables/useI18n';
+import { useSwal } from '../../../composables/useSwal';
+import { useZaloSocket } from '../../../composables/useZaloSocket';
+import axios from 'axios';
+import Swal from 'sweetalert2';
+import { isRichTextFormat, getHtmlContent, getPlainText } from '../../../utils/zaloRichTextParser';
+import ZaloStickerPicker from './ZaloStickerPicker.vue';
+
+const props = defineProps({
+  item: {
+    type: Object,
+    required: true,
+  },
+  accountId: {
+    type: Number,
+    default: null,
+  },
+  itemType: {
+    type: String,
+    required: true, // 'friends' or 'groups'
+  },
+});
+
+const emit = defineEmits(['message-sent', 'conversation-deleted']);
+
+const { t } = useI18n();
+const zaloAccount = inject('zaloAccount', null);
+const zaloSocket = useZaloSocket();
+
+// 🔥 FIX: Get account ID from props or fallback to zaloAccount
+// This ensures we use the currently selected account
+const currentAccountId = computed(() => {
+  return props.accountId || zaloAccount?.activeAccountId?.value || null;
+});
+
+const messages = ref([]);
+const messageText = ref('');
+const loadingMessages = ref(false);
+const loadingOlderMessages = ref(false); // For lazy loading
+const hasMoreMessages = ref(false); // Whether there are more messages to load
+const oldestMessageId = ref(null); // ID of oldest message (for pagination)
+const sending = ref(false);
+const uploading = ref(false);
+const messagesContainer = ref(null);
+
+// Race condition prevention
+let currentLoadController = null; // AbortController for current request
+const messagesCache = new Map(); // Cache messages by conversation ID
+let currentConversationId = null; // Track current conversation
+let currentLoadTimestamp = 0; // Timestamp to verify latest request
+const fileInput = ref(null);
+const imageInput = ref(null);
+const videoInput = ref(null);
+const audioInput = ref(null);
+const folderInput = ref(null);
+const selectedFile = ref(null);
+const selectedImage = ref(null);
+const selectedVideo = ref(null);
+const selectedAudio = ref(null);
+const selectedFolder = ref(null);
+const selectedImagePreview = ref(null);
+const showEditor = ref(false);
+const editorContent = ref(null);
+const editorStyles = ref({
+  bold: false,
+  italic: false,
+  underline: false,
+  color: null,
+});
+const textareaRef = ref(null); // Reference to textarea for cursor position
+const savedCursorPosition = ref(0); // Save cursor position when switching to editor
+
+// Reply state
+const replyingTo = ref(null);
+const replyText = ref('');
+const sendingReply = ref(false);
+
+// Reaction state
+const showReactionPickerFor = ref(null);
+const lightboxImage = ref(null);
+const showLightbox = ref(false);
+
+// More options dropdown state
+const showMoreOptions = ref(false);
+const moreOptionsRef = ref(null);
+
+// Sticker picker state
+const showStickerPicker = ref(false);
+
+// Event creation state
+const showEventModal = ref(false);
+const creatingEvent = ref(false);
+const eventForm = ref({
+  title: '',
+  datetime: '',
+  emoji: '⏰',
+  repeat: '0',
+});
+
+// Event emojis for selection
+const eventEmojis = ['⏰', '📅', '🎂', '🎉', '📢', '💼', '📝', '❗', '⚠️', '✅'];
+
+// Minimum datetime for event (current time)
+const minEventDateTime = computed(() => {
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  return now.toISOString().slice(0, 16);
+});
+
+// Zalo reaction icons (matching actual Zalo API format)
+const availableReactions = [
+  { icon: '/-heart', emoji: '❤️', name: 'Trái tim' },
+  { icon: '/-strong', emoji: '👍', name: 'Thích' },
+  { icon: ':>', emoji: '😂', name: 'Cười to' },
+  { icon: ':o', emoji: '😮', name: 'Ngạc nhiên' },
+  { icon: ':-((', emoji: '😢', name: 'Khóc to' },
+  { icon: ':-h', emoji: '😠', name: 'Tức giận' },
+];
+
+// Determine recipient type from itemType prop
+const recipientType = computed(() => {
+  if (props.itemType === 'groups' || props.itemType === 'group') {
+    return 'group';
+  }
+  return 'user';
+});
+
+// Lightbox functions
+const openLightbox = (imageUrl) => {
+  lightboxImage.value = imageUrl;
+  showLightbox.value = true;
+};
+
+const closeLightbox = () => {
+  showLightbox.value = false;
+  lightboxImage.value = null;
+};
+
+// Debug image loading
+const handleImageError = (event) => {
+  console.error('❌ [Image Load Error]:', {
+    src: event.target.src,
+    error: 'Failed to load image',
+    naturalWidth: event.target.naturalWidth,
+    naturalHeight: event.target.naturalHeight,
+  });
+};
+
+const handleImageLoad = (event) => {
+  console.log('✅ [Image Loaded]:', {
+    src: event.target.src.substring(0, 80) + '...',
+    width: event.target.naturalWidth,
+    height: event.target.naturalHeight,
+    complete: event.target.complete,
+  });
+};
+
+// Helper function to get file/media title from message content
+const getMediaTitle = (message) => {
+  // DEBUG: Log message structure for files
+  if (message.content_type === 'file') {
+    console.log('📄 [getMediaTitle] File message:', {
+      has_media_url: !!message.media_url,
+      media_url: message.media_url,
+      has_metadata: !!message.metadata,
+      metadata_file: message.metadata?.file,
+      content_preview: message.content?.substring(0, 100)
+    });
+  }
+
+  // Priority 1: metadata.file.title
+  if (message.metadata?.file?.title) {
+    return message.metadata.file.title;
+  }
+
+  // Priority 2: Parse JSON from content
+  if (message.content && message.content.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(message.content);
+      if (parsed.title) {
+        return parsed.title;
+      }
+    } catch (e) {
+      // Not valid JSON
+    }
+  }
+
+  // Priority 2.5: Check if content is plain text filename (has file extension)
+  if (message.content && message.content.trim()) {
+    const content = message.content.trim();
+    // Check if content looks like a filename (contains a file extension)
+    const fileExtensionPattern = /\.(docx?|xlsx?|pptx?|pdf|txt|zip|rar|7z|jpg|jpeg|png|gif|mp4|avi|mov)$/i;
+    if (fileExtensionPattern.test(content)) {
+      let filename = content;
+
+      // Remove Zalo timestamp prefix (format: YYYYMMDDHHMMSS_)
+      const timestampPattern = /^\d{14}_/;
+      if (timestampPattern.test(filename)) {
+        filename = filename.replace(timestampPattern, '');
+      }
+
+      // Truncate if too long but keep extension
+      if (filename.length > 40) {
+        const extIndex = filename.lastIndexOf('.');
+        const name = filename.substring(0, extIndex);
+        const ext = filename.substring(extIndex);
+        return name.substring(0, 35) + '...' + ext;
+      }
+
+      return filename;
+    }
+  }
+
+  // Priority 3: Extract filename from media_url or metadata.file.href
+  const fileUrl = message.media_url || message.metadata?.file?.href;
+  if (fileUrl) {
+    try {
+      const url = new URL(fileUrl);
+      const pathname = url.pathname;
+      let filename = pathname.substring(pathname.lastIndexOf('/') + 1);
+
+      // Decode URL encoding
+      filename = decodeURIComponent(filename);
+
+      // Remove Zalo timestamp prefix (format: YYYYMMDDHHMMSS_)
+      // Example: 20251128101308_ENGLISH DIA... -> ENGLISH DIA...
+      const timestampPattern = /^\d{14}_/; // 14 digits followed by underscore
+      if (timestampPattern.test(filename)) {
+        filename = filename.replace(timestampPattern, '');
+      }
+
+      // If filename has extension, use it
+      if (filename && filename.includes('.')) {
+        // Truncate if too long but keep extension
+        if (filename.length > 40) {
+          const extIndex = filename.lastIndexOf('.');
+          const name = filename.substring(0, extIndex);
+          const ext = filename.substring(extIndex);
+          return name.substring(0, 35) + '...' + ext;
+        }
+        return filename;
+      }
+    } catch (e) {
+      // Invalid URL
+    }
+  }
+
+  // Priority 4: Generic placeholder based on content_type
+  if (message.content_type === 'video') return 'Video';
+  if (message.content_type === 'image') return 'Hình ảnh';
+  if (message.content_type === 'file') return 'Tài liệu';
+
+  return 'File';
+};
+
+// Helper to check if message is a special type (event/birthday) and get its info
+const getSpecialMessageInfo = (message) => {
+  if (!message.content) return null;
+
+  const content = message.content.trim();
+  if (!content.startsWith('{')) return null;
+
+  try {
+    const parsed = JSON.parse(content);
+    if (!parsed.href) return null;
+
+    const hrefLower = parsed.href.toLowerCase();
+
+    // Check for event/reminder
+    if (hrefLower.includes('reminder') || hrefLower.includes('event')) {
+      return {
+        type: 'event',
+        icon: '📅',
+        title: parsed.title || 'Sự kiện',
+        description: parsed.description || '',
+        thumb: parsed.thumb || message.media_url
+      };
+    }
+
+    // Check for birthday
+    if (hrefLower.includes('ecard') || hrefLower.includes('birthday') ||
+        (parsed.title && parsed.title.toLowerCase().includes('sinh nhật'))) {
+      return {
+        type: 'birthday',
+        icon: '🎂',
+        title: parsed.title || 'Sinh nhật',
+        description: parsed.description || '',
+        thumb: parsed.thumb || message.media_url
+      };
+    }
+  } catch (e) {
+    // Not valid JSON
+  }
+
+  return null;
+};
+
+// Helper to detect special message types
+const detectSpecialMessageType = (href, title, description) => {
+  if (!href) return null;
+
+  const hrefLower = href.toLowerCase();
+
+  // Media CDN patterns - these should NOT show the link
+  const isMediaCDN = hrefLower.includes('res-zalo.zadn.vn/upload/media') ||
+                     hrefLower.includes('zdn.vn') && (
+                       hrefLower.includes('.jpg') ||
+                       hrefLower.includes('.png') ||
+                       hrefLower.includes('.gif') ||
+                       hrefLower.includes('.webp')
+                     );
+
+  if (!isMediaCDN) return null;
+
+  // Detect specific types
+  if (hrefLower.includes('reminder') || hrefLower.includes('event')) {
+    return { type: 'event', icon: '📅', label: 'Sự kiện' };
+  }
+  if (hrefLower.includes('ecard') || hrefLower.includes('birthday') ||
+      (title && title.toLowerCase().includes('sinh nhật'))) {
+    return { type: 'birthday', icon: '🎂', label: 'Sinh nhật' };
+  }
+  if (hrefLower.includes('sticker') || hrefLower.includes('emoticon')) {
+    return { type: 'sticker', icon: '😊', label: 'Sticker' };
+  }
+
+  // Generic media - no link needed
+  return { type: 'media', icon: '📷', label: 'Media' };
+};
+
+// Format message content - hide CDN URLs for images and special messages
+const formatMessageContent = (content, contentType, asHtml = false) => {
+  if (!content) return '';
+
+  // Check if content is JSON (file/image/video metadata)
+  if (content.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(content);
+
+      // Handle link format
+      if (parsed.href && parsed.title !== undefined) {
+        const specialType = detectSpecialMessageType(parsed.href, parsed.title, parsed.description);
+
+        // Special message (event, birthday, media) - show nice card WITHOUT link
+        if (specialType) {
+          const titleText = parsed.title || '';
+          const descText = parsed.description || '';
+
+          if (asHtml) {
+            // Event/Reminder card - compact inline design
+            if (specialType.type === 'event') {
+              return `<div class="inline-flex items-center gap-2 px-2.5 py-1.5 bg-blue-50 dark:bg-blue-900/30 rounded-lg border border-blue-200 dark:border-blue-800 max-w-full">
+                <span class="flex-shrink-0">📅</span>
+                <div class="min-w-0 flex-1">
+                  <span class="text-sm font-medium text-blue-800 dark:text-blue-200 break-words">${escapeHtml(titleText || 'Sự kiện')}</span>
+                  ${descText && descText !== titleText ? `<div class="text-xs text-blue-600 dark:text-blue-400 truncate">${escapeHtml(descText)}</div>` : ''}
+                </div>
+              </div>`;
+            }
+
+            // Birthday card - compact inline design
+            if (specialType.type === 'birthday') {
+              return `<div class="inline-flex items-center gap-2 px-2.5 py-1.5 bg-pink-50 dark:bg-pink-900/30 rounded-lg border border-pink-200 dark:border-pink-800 max-w-full">
+                <span class="flex-shrink-0">🎂</span>
+                <div class="min-w-0 flex-1">
+                  <span class="text-sm font-medium text-pink-800 dark:text-pink-200 break-words">${escapeHtml(titleText || 'Sinh nhật')}</span>
+                  ${descText && descText !== titleText ? `<div class="text-xs text-pink-600 dark:text-pink-400 truncate">${escapeHtml(descText)}</div>` : ''}
+                </div>
+              </div>`;
+            }
+
+            // Sticker - return empty, will be displayed in sticker block
+            if (specialType.type === 'sticker') {
+              return '';
+            }
+
+            // Generic media - compact inline
+            return `<div class="inline-flex items-center gap-1.5 px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm">
+              <span>${specialType.icon}</span>
+              <span class="text-gray-700 dark:text-gray-300">${escapeHtml(titleText || specialType.label)}</span>
+            </div>`;
+          }
+
+          // Plain text version
+          return `${specialType.icon} ${titleText}${descText ? ' - ' + descText : ''}`;
+        }
+
+        // Regular link - show with clickable href
+        const linkText = parsed.title || parsed.description || parsed.href;
+        const displayText = linkText.length > 100 ? linkText.substring(0, 97) + '...' : linkText;
+
+        if (asHtml) {
+          return `<div class="flex items-start gap-2 p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
+            <svg class="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
+            </svg>
+            <div class="flex-1 min-w-0">
+              <div class="font-medium text-gray-900 dark:text-gray-100 break-words">${escapeHtml(displayText)}</div>
+              ${parsed.description && parsed.title !== parsed.description ? `<div class="text-sm text-gray-600 dark:text-gray-400 mt-1 break-words">${escapeHtml(parsed.description)}</div>` : ''}
+              <a href="${parsed.href}" target="_blank" rel="noopener noreferrer" class="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1 inline-block break-all">${escapeHtml(parsed.href)}</a>
+            </div>
+          </div>`;
+        }
+        return `🔗 ${displayText}`;
+      }
+
+      // If it's file/image/video JSON with href/thumb, return placeholder
+      if (parsed.href || parsed.thumb) {
+        // Return empty string - the media will be displayed in its own block
+        return '';
+      }
+    } catch (e) {
+      // Not valid JSON, continue with normal processing
+    }
+  }
+
+  // If it's an image and content is a CDN URL, show generic message
+  if (contentType === 'image' && (content.includes('zdn.vn') || content.includes('http') || content.includes('.jpg') || content.includes('.png'))) {
+    return '📷 Hình ảnh'; // Use hardcoded text to ensure it always works
+  }
+
+  // Check if content is rich text format
+  if (isRichTextFormat(content)) {
+    return asHtml ? getHtmlContent(content) : getPlainText(content);
+  }
+
+  return content;
+};
+
+// Helper to escape HTML (reuse from zaloRichTextParser if available, or define here)
+const escapeHtml = (text) => {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+};
+
+// Format message content with styles support
+const formatMessageContentWithStyles = (content, contentType, styles) => {
+  if (!content) return '';
+  
+  // Debug: Log styles - expand object to see full details
+  console.log('🎨 [formatMessageContentWithStyles] Called with:', {
+    content: content?.substring(0, 50),
+    contentType,
+    styles: styles ? JSON.parse(JSON.stringify(styles)) : null,
+    hasStyles: !!styles,
+    isArray: Array.isArray(styles),
+    stylesLength: styles?.length || 0,
+    stylesType: typeof styles,
+    stylesPreview: styles?.slice ? styles.slice(0, 2) : styles
+  });
+  
+  // Also log the full message object if available (for debugging)
+  if (typeof window !== 'undefined' && window.DEBUG_ZALO) {
+    console.log('🔍 [DEBUG] Full message context:', arguments);
+  }
+  
+  // First format content normally
+  let html = formatMessageContent(content, contentType, true);
+  
+  // If no styles, return formatted content
+  if (!styles || !Array.isArray(styles) || styles.length === 0) {
+    console.log('⚠️ [formatMessageContentWithStyles] No styles, returning plain HTML');
+    return html;
+  }
+  
+  // Apply styles to content
+  // Styles format: [{ start: number, end: number, bold?: boolean, italic?: boolean, underline?: boolean, unorderedList?: boolean, orderedList?: boolean, color?: string }]
+  const plainText = formatMessageContent(content, contentType, false);
+  if (!plainText) return html;
+  
+  // Build HTML with styles
+  let styledHtml = '';
+  let currentIndex = 0;
+  
+  // Sort styles by start position
+  const sortedStyles = [...styles].sort((a, b) => (a.start || 0) - (b.start || 0));
+  
+  sortedStyles.forEach((style, idx) => {
+    const start = style.start || 0;
+    const end = style.end || plainText.length;
+    
+    // Add text before this style
+    if (currentIndex < start) {
+      styledHtml += escapeHtml(plainText.substring(currentIndex, start));
+    }
+    
+    // Build style attributes
+    const styleAttrs = [];
+    const classes = [];
+    
+    if (style.bold) classes.push('font-bold');
+    if (style.italic) classes.push('italic');
+    if (style.underline) classes.push('underline');
+    
+    // Handle colors
+    if (style.color) {
+      if (style.color === 'c_db342e' || style.color === 'red') {
+        styleAttrs.push('color: #db342e');
+      } else if (style.color === 'c_f27806' || style.color === 'orange') {
+        styleAttrs.push('color: #f27806');
+      } else if (style.color === 'c_f7b503' || style.color === 'yellow') {
+        styleAttrs.push('color: #f7b503');
+      } else if (style.color === 'c_15a85f' || style.color === 'green') {
+        styleAttrs.push('color: #15a85f');
+      }
+    }
+    
+    // Get text for this style range
+    const styleText = plainText.substring(start, end);
+    
+    // Handle list styles - wrap in ul/ol
+    if (style.unorderedList || style.orderedList) {
+      // Check if we need to create a list or add to existing list
+      // For now, wrap in list element
+      const listTag = style.unorderedList ? 'ul' : 'ol';
+      const listClass = 'message-list';
+      
+      // Check if previous style was also a list of same type
+      const prevStyle = idx > 0 ? sortedStyles[idx - 1] : null;
+      const isContinuingList = prevStyle && 
+        ((style.unorderedList && prevStyle.unorderedList) || 
+         (style.orderedList && prevStyle.orderedList)) &&
+        prevStyle.end === start;
+      
+      if (!isContinuingList) {
+        styledHtml += `<${listTag} class="${listClass}">`;
+      }
+      
+      styledHtml += `<li${classes.length > 0 ? ` class="${classes.join(' ')}"` : ''}${styleAttrs.length > 0 ? ` style="${styleAttrs.join('; ')}"` : ''}>${escapeHtml(styleText)}</li>`;
+      
+      // Check if next style is not a list or different type
+      const nextStyle = idx < sortedStyles.length - 1 ? sortedStyles[idx + 1] : null;
+      const isLastInList = !nextStyle || 
+        !((style.unorderedList && nextStyle.unorderedList) || 
+          (style.orderedList && nextStyle.orderedList)) ||
+        nextStyle.start !== end;
+      
+      if (isLastInList) {
+        styledHtml += `</${listTag}>`;
+      }
+    } else {
+      // Regular styled text
+      if (classes.length > 0 || styleAttrs.length > 0) {
+        styledHtml += `<span${classes.length > 0 ? ` class="${classes.join(' ')}"` : ''}${styleAttrs.length > 0 ? ` style="${styleAttrs.join('; ')}"` : ''}>${escapeHtml(styleText)}</span>`;
+      } else {
+        styledHtml += escapeHtml(styleText);
+      }
+    }
+    
+    currentIndex = end;
+  });
+  
+  // Add remaining text
+  if (currentIndex < plainText.length) {
+    styledHtml += escapeHtml(plainText.substring(currentIndex));
+  }
+  
+  return styledHtml || html;
+};
+
+// Load messages with race condition prevention and caching
+const loadMessages = async (loadAll = false, forceReload = false) => {
+  if (!props.item?.id) return;
+
+  const conversationId = props.item.id;
+  const accountId = currentAccountId.value;
+
+  if (!accountId) {
+    console.warn('No active account');
+    return;
+  }
+
+  // Cancel previous request if still pending
+  if (currentLoadController) {
+    console.log('🚫 [ZaloChatView] Aborting previous load request');
+    currentLoadController.abort();
+  }
+
+  // Update current conversation ID and timestamp
+  currentConversationId = conversationId;
+  const requestTimestamp = Date.now();
+  currentLoadTimestamp = requestTimestamp;
+
+  console.log('🔄 [ZaloChatView] Loading messages:', {
+    conversationId,
+    requestTimestamp,
+    hasCache: messagesCache.has(conversationId),
+    forceReload,
+  });
+
+  // Check cache first (unless force reload)
+  if (!forceReload && !loadAll && messagesCache.has(conversationId)) {
+    const cachedMessages = messagesCache.get(conversationId);
+
+    // 🔥 VALIDATION: Ensure cached messages are valid array
+    if (Array.isArray(cachedMessages) && cachedMessages.length >= 0) {
+      console.log('💾 [ZaloChatView] Loading from cache:', conversationId, 'messages:', cachedMessages.length);
+      messages.value = cachedMessages;
+      loadingMessages.value = false; // 🔥 FIX: Clear loading state when loading from cache
+      await nextTick();
+      setTimeout(() => scrollToBottom(), 100);
+      return;
+    } else {
+      console.warn('⚠️ [ZaloChatView] Invalid cache data, removing:', conversationId, cachedMessages);
+      messagesCache.delete(conversationId);
+      // Continue to fetch from API
+    }
+  }
+
+  loadingMessages.value = true;
+
+  // Create new AbortController for this request
+  currentLoadController = new AbortController();
+  const requestConversationId = conversationId; // Capture for closure
+
+  try {
+    const params = {
+      account_id: accountId,
+      recipient_id: conversationId,
+      recipient_type: recipientType.value,
+    };
+
+    // When refreshing, load ALL messages
+    if (loadAll) {
+      params.per_page = 99999;
+    }
+
+    console.log('📡 [ZaloChatView] Fetching messages for:', conversationId);
+
+    const response = await axios.get('/api/zalo/messages', {
+      params,
+      signal: currentLoadController.signal
+    });
+
+    // Check if this conversation is still active AND this is the latest request
+    if (requestConversationId !== currentConversationId || requestTimestamp !== currentLoadTimestamp) {
+      console.log('⚠️ [ZaloChatView] Ignoring stale response:', {
+        requestConvId: requestConversationId,
+        currentConvId: currentConversationId,
+        requestTime: requestTimestamp,
+        currentTime: currentLoadTimestamp,
+        isStale: requestTimestamp !== currentLoadTimestamp,
+      });
+      return;
+    }
+
+    if (response.data.success) {
+      const loadedMessages = response.data.data || [];
+      const meta = response.data.meta || {};
+
+      // 🔥 VALIDATION: Ensure we're caching valid data
+      if (!Array.isArray(loadedMessages)) {
+        console.error('❌ [ZaloChatView] Invalid response data (not array):', loadedMessages);
+        return;
+      }
+
+      // Update messages and cache
+      messages.value = loadedMessages;
+      messagesCache.set(conversationId, loadedMessages);
+
+      // Update pagination metadata
+      hasMoreMessages.value = meta.has_more || false;
+      oldestMessageId.value = meta.oldest_id || null;
+
+      console.log('✅ [ZaloChatView] Messages loaded and cached:', {
+        conversationId,
+        hasMore: hasMoreMessages.value,
+        oldestId: oldestMessageId.value,
+        messageCount: loadedMessages.length,
+        isCurrentConv: conversationId === currentConversationId,
+      });
+
+      // Scroll to bottom after DOM update
+      await nextTick();
+      setTimeout(() => scrollToBottom(), 100);
+    }
+  } catch (error) {
+    if (error.name === 'CanceledError' || error.code === 'ERR_CANCELED') {
+      console.log('🚫 [ZaloChatView] Request aborted for:', requestConversationId);
+    } else {
+      console.error('Failed to load messages:', error);
+    }
+  } finally {
+    // Only clear loading if this is still the current conversation AND latest request
+    if (requestConversationId === currentConversationId && requestTimestamp === currentLoadTimestamp) {
+      loadingMessages.value = false;
+      currentLoadController = null;
+      console.log('✅ [ZaloChatView] Load complete for:', conversationId);
+    } else {
+      console.log('⏭️ [ZaloChatView] Skipping cleanup for stale request:', requestConversationId);
+    }
+  }
+};
+
+// Clear all cache (helper function)
+const clearAllCache = () => {
+  console.log('🧹 [ZaloChatView] Clearing all message cache');
+  messagesCache.clear();
+  messages.value = [];
+};
+
+// Load older messages (lazy loading / infinite scroll)
+const loadOlderMessages = async () => {
+  if (!hasMoreMessages.value || loadingOlderMessages.value || !oldestMessageId.value) {
+    console.log('⏭️ [ZaloChatView] Skipping load older messages:', {
+      hasMore: hasMoreMessages.value,
+      loading: loadingOlderMessages.value,
+      oldestId: oldestMessageId.value,
+    });
+    return;
+  }
+
+  const conversationId = props.item?.id;
+  const accountId = currentAccountId.value;
+
+  if (!conversationId || !accountId) return;
+
+  loadingOlderMessages.value = true;
+
+  try {
+    console.log('📜 [ZaloChatView] Loading older messages before ID:', oldestMessageId.value);
+
+    // Save current scroll position
+    const container = messagesContainer.value;
+    const scrollHeightBefore = container?.scrollHeight || 0;
+
+    const response = await axios.get('/api/zalo/messages', {
+      params: {
+        account_id: accountId,
+        recipient_id: conversationId,
+        recipient_type: recipientType.value,
+        before_id: oldestMessageId.value, // Load messages before this ID
+        per_page: 50,
+      },
+    });
+
+    if (response.data.success) {
+      const olderMessages = response.data.data || [];
+      const meta = response.data.meta || {};
+
+      console.log('✅ [ZaloChatView] Older messages loaded:', {
+        count: olderMessages.length,
+        hasMore: meta.has_more,
+        oldestId: meta.oldest_id,
+      });
+
+      // Prepend older messages to the beginning
+      messages.value = [...olderMessages, ...messages.value];
+
+      // Update pagination metadata
+      hasMoreMessages.value = meta.has_more || false;
+      oldestMessageId.value = meta.oldest_id || null;
+
+      // Update cache
+      messagesCache.set(conversationId, messages.value);
+
+      // Maintain scroll position
+      await nextTick();
+      if (container) {
+        const scrollHeightAfter = container.scrollHeight;
+        const scrollDiff = scrollHeightAfter - scrollHeightBefore;
+        container.scrollTop += scrollDiff;
+      }
+    }
+  } catch (error) {
+    if (error.name !== 'AbortError') {
+      console.error('❌ [ZaloChatView] Error loading older messages:', error);
+    }
+  } finally {
+    loadingOlderMessages.value = false;
+  }
+};
+
+// Handle scroll event for lazy loading
+const handleScroll = () => {
+  const container = messagesContainer.value;
+  if (!container) return;
+
+  // Check if scrolled to top (with 50px threshold)
+  if (container.scrollTop < 50 && hasMoreMessages.value && !loadingOlderMessages.value) {
+    console.log('🔝 [ZaloChatView] Scrolled to top, loading older messages...');
+    loadOlderMessages();
+  }
+};
+
+// Handle refresh messages button click
+const handleRefreshMessages = async () => {
+  if (loadingMessages.value) return;
+
+  console.log('🔄 [ZaloChatView] Refreshing ALL messages for conversation:', props.item?.id);
+
+  // Clear cache for this conversation
+  if (props.item?.id) {
+    messagesCache.delete(props.item.id);
+  }
+
+  // Clear current messages to force fresh load
+  messages.value = [];
+
+  // Reload ALL messages from database (with loadAll=true, forceReload=true)
+  await loadMessages(true, true);
+
+  // Show success notification
+  useSwal().fire({
+    icon: 'success',
+    title: t('zalo.messages_refreshed') || 'Đã đồng bộ',
+    text: t('zalo.messages_refreshed_desc') || 'Tin nhắn đã được làm mới với thời gian chính xác từ cơ sở dữ liệu',
+    timer: 2000,
+    showConfirmButton: false,
+    toast: true,
+    position: 'top-end',
+  });
+};
+
+// Delete conversation from database
+const handleDeleteConversation = async () => {
+  showMoreOptions.value = false;
+
+  const result = await useSwal().fire({
+    title: t('zalo.confirm_delete_conversation') || 'Xác nhận xóa',
+    text: t('zalo.delete_conversation_warning') || 'Tất cả tin nhắn trong cuộc hội thoại này sẽ bị xóa khỏi hệ thống. Hành động này không thể hoàn tác.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#dc2626',
+    cancelButtonColor: '#6b7280',
+    confirmButtonText: t('common.delete') || 'Xóa',
+    cancelButtonText: t('common.cancel') || 'Hủy',
+  });
+
+  if (!result.isConfirmed) return;
+
+  try {
+    const response = await axios.delete(`/api/zalo/conversations/${props.item.id}`);
+
+    if (response.data.success) {
+      useSwal().fire({
+        icon: 'success',
+        title: t('zalo.conversation_deleted') || 'Đã xóa',
+        text: t('zalo.conversation_deleted_desc') || 'Cuộc hội thoại đã được xóa khỏi hệ thống',
+        timer: 2000,
+        showConfirmButton: false,
+      });
+
+      // Emit event to parent to refresh conversation list
+      emit('conversation-deleted', props.item.id);
+    }
+  } catch (error) {
+    console.error('❌ [ZaloChatView] Failed to delete conversation:', error);
+    useSwal().fire({
+      icon: 'error',
+      title: t('common.error') || 'Lỗi',
+      text: error.response?.data?.message || t('zalo.delete_conversation_failed') || 'Không thể xóa cuộc hội thoại',
+    });
+  }
+};
+
+// Check if message can be recalled (within 5 minutes)
+const canRecallMessage = (message) => {
+  // Must be a sent message
+  if (message.type !== 'sent') {
+    return false;
+  }
+  
+  // Must not be already recalled
+  if (message.metadata?.recalled || message.content === '[Tin nhắn đã thu hồi]') {
+    return false;
+  }
+  
+  // Check time limit - use sent_at if available, otherwise use created_at
+  const timestamp = message.sent_at || message.created_at;
+  if (!timestamp) {
+    return false;
+  }
+
+  try {
+    const sentAt = new Date(timestamp);
+    // Check if date is valid
+    if (isNaN(sentAt.getTime())) {
+      return false;
+    }
+
+    const now = new Date();
+    const diffMs = now.getTime() - sentAt.getTime();
+    const diffMinutes = diffMs / (1000 * 60);
+
+    // Allow recall within 5 minutes (300 seconds)
+    // Allow small negative values for clock skew
+    return diffMinutes <= 5 && diffMinutes >= -0.5;
+  } catch (error) {
+    console.error('[canRecallMessage] Error:', error, timestamp);
+    return false;
+  }
+};
+
+// Recall (undo) a sent message
+const handleRecallMessage = async (message) => {
+  const result = await useSwal().fire({
+    title: t('zalo.confirm_recall') || 'Thu hồi tin nhắn',
+    text: t('zalo.recall_warning') || 'Tin nhắn sẽ bị thu hồi và đối phương sẽ không thể xem được nữa.',
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonColor: '#f59e0b',
+    cancelButtonColor: '#6b7280',
+    confirmButtonText: t('zalo.recall') || 'Thu hồi',
+    cancelButtonText: t('common.cancel') || 'Hủy',
+  });
+
+  if (!result.isConfirmed) return;
+
+  try {
+    const response = await axios.post(`/api/zalo/messages/${message.id}/recall`);
+
+    if (response.data.success) {
+      // Update message content locally
+      message.content = '[Tin nhắn đã thu hồi]';
+      message.metadata = { ...message.metadata, recalled: true };
+
+      useSwal().fire({
+        icon: 'success',
+        title: t('zalo.message_recalled') || 'Đã thu hồi',
+        timer: 1500,
+        showConfirmButton: false,
+        toast: true,
+        position: 'top-end',
+      });
+    }
+  } catch (error) {
+    console.error('❌ [ZaloChatView] Failed to recall message:', error);
+    const errorMessage = error.response?.data?.message || error.message || '';
+    
+    let displayMessage = t('zalo.recall_failed') || 'Không thể thu hồi tin nhắn';
+    if (errorMessage) {
+      displayMessage = errorMessage;
+    }
+    
+    useSwal().fire({
+      icon: 'error',
+      title: t('common.error') || 'Lỗi',
+      text: displayMessage,
+    });
+  }
+};
+
+// Handle file select
+const handleFileSelect = async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  selectedFile.value = file;
+  selectedImage.value = null;
+  selectedImagePreview.value = null;
+  
+  // Don't auto-upload - wait for user to click Send button
+  // This allows user to type a message along with the file
+};
+
+// Handle image select
+const handleImageSelect = async (event) => {
+  console.log('🖼️ [ZaloChatView] handleImageSelect called - image selected (NOT uploading yet)');
+  
+  const file = event.target.files[0];
+  if (!file) {
+    console.log('⚠️ [ZaloChatView] No file selected');
+    return;
+  }
+  
+  console.log('🖼️ [ZaloChatView] File selected:', {
+    name: file.name,
+    size: file.size,
+    type: file.type,
+    note: 'This is just selection, NOT upload. Upload will happen when Send button is clicked.',
+  });
+  
+  // Create preview
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    selectedImagePreview.value = e.target.result;
+    console.log('✅ [ZaloChatView] Image preview created');
+  };
+  reader.readAsDataURL(file);
+  
+  selectedImage.value = file;
+  selectedFile.value = null;
+  
+  console.log('✅ [ZaloChatView] Image stored in selectedImage. Waiting for Send button click...');
+  
+  // Don't auto-upload - wait for user to click Send button
+  // This allows user to type a message along with the image
+};
+
+// Handle video select
+const handleVideoSelect = async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  selectedVideo.value = file;
+  selectedFile.value = null;
+  selectedImage.value = null;
+  selectedAudio.value = null;
+  selectedFolder.value = null;
+  selectedImagePreview.value = null;
+};
+
+// Handle audio select
+const handleAudioSelect = async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  selectedAudio.value = file;
+  selectedFile.value = null;
+  selectedImage.value = null;
+  selectedVideo.value = null;
+  selectedFolder.value = null;
+  selectedImagePreview.value = null;
+};
+
+// Handle folder select
+const handleFolderSelect = async (event) => {
+  const files = Array.from(event.target.files || []);
+  if (files.length === 0) return;
+  
+  selectedFolder.value = files;
+  selectedFile.value = null;
+  selectedImage.value = null;
+  selectedVideo.value = null;
+  selectedAudio.value = null;
+  selectedImagePreview.value = null;
+};
+
+// Helper function to set cursor position in contenteditable
+const setCursorPosition = (element, position) => {
+  const range = document.createRange();
+  const selection = window.getSelection();
+  
+  // Find text node and set cursor position
+  let currentPos = 0;
+  const walker = document.createTreeWalker(
+    element,
+    NodeFilter.SHOW_TEXT,
+    null
+  );
+  
+  let node;
+  let targetNode = null;
+  let targetOffset = 0;
+  
+  while (node = walker.nextNode()) {
+    const nodeLength = node.textContent.length;
+    if (currentPos + nodeLength >= position) {
+      targetNode = node;
+      targetOffset = position - currentPos;
+      break;
+    }
+    currentPos += nodeLength;
+  }
+  
+  if (targetNode) {
+    range.setStart(targetNode, targetOffset);
+    range.setEnd(targetNode, targetOffset);
+  } else {
+    // Cursor at end
+    if (element.childNodes.length > 0) {
+      const lastNode = element.childNodes[element.childNodes.length - 1];
+      if (lastNode.nodeType === Node.TEXT_NODE) {
+        range.setStart(lastNode, lastNode.textContent.length);
+        range.setEnd(lastNode, lastNode.textContent.length);
+      } else {
+        range.setStartAfter(lastNode);
+        range.setEndAfter(lastNode);
+      }
+    } else {
+      range.setStart(element, 0);
+      range.setEnd(element, 0);
+    }
+  }
+  
+  selection.removeAllRanges();
+  selection.addRange(range);
+};
+
+// Rich text editor functions
+const toggleEditor = () => {
+  if (!showEditor.value) {
+    // Bật editor: chuyển text từ textarea vào editor
+    // Lưu cursor position từ textarea
+    if (textareaRef.value) {
+      savedCursorPosition.value = textareaRef.value.selectionStart || messageText.value.length;
+    } else {
+      savedCursorPosition.value = messageText.value.length;
+    }
+    
+    showEditor.value = true;
+    nextTick(() => {
+      if (editorContent.value) {
+        if (messageText.value) {
+          // Set plain text vào editor
+          editorContent.value.textContent = messageText.value;
+        }
+        // Trigger input để sync
+        handleEditorInput();
+        
+        // Restore cursor position ở vị trí đã lưu
+        const cursorPos = Math.min(savedCursorPosition.value, messageText.value.length);
+        setCursorPosition(editorContent.value, cursorPos);
+      }
+      // Focus vào editor sau khi bật
+      if (editorContent.value) {
+        editorContent.value.focus();
+      }
+    });
+  } else {
+    // Tắt editor: chuyển text từ editor về textarea (plain text)
+    if (editorContent.value) {
+      const plainText = editorContent.value.innerText || editorContent.value.textContent || '';
+      messageText.value = plainText;
+      
+      // Lưu cursor position từ editor để restore khi bật lại
+      const selection = window.getSelection();
+      if (selection.rangeCount > 0 && editorContent.value.contains(selection.anchorNode)) {
+        const range = selection.getRangeAt(0);
+        const preCaretRange = range.cloneRange();
+        preCaretRange.selectNodeContents(editorContent.value);
+        preCaretRange.setEnd(range.endContainer, range.endOffset);
+        savedCursorPosition.value = preCaretRange.toString().length;
+      } else {
+        savedCursorPosition.value = plainText.length;
+      }
+    }
+    showEditor.value = false;
+    
+    // Restore cursor position trong textarea
+    nextTick(() => {
+      if (textareaRef.value) {
+        const pos = Math.min(savedCursorPosition.value, messageText.value.length);
+        textareaRef.value.setSelectionRange(pos, pos);
+        textareaRef.value.focus();
+      }
+    });
+  }
+};
+
+const handleEditorInput = () => {
+  if (editorContent.value) {
+    // Sync plain text to messageText để button send hoạt động
+    const plainText = editorContent.value.innerText || editorContent.value.textContent || '';
+    messageText.value = plainText;
+    
+    // Update style states
+    editorStyles.value.bold = document.queryCommandState('bold');
+    editorStyles.value.italic = document.queryCommandState('italic');
+    editorStyles.value.underline = document.queryCommandState('underline');
+    
+    console.log('📝 [ZaloChatView] Editor HTML:', editorContent.value.innerHTML.substring(0, 200));
+  }
+};
+
+const insertLineBreak = () => {
+  if (editorContent.value) {
+    document.execCommand('insertLineBreak', false, null);
+  }
+};
+
+// Handle Enter key in editor - Enter = new line, Shift+Enter = send
+const handleEditorEnter = (event) => {
+  if (!editorContent.value) {
+    return;
+  }
+  
+  const selection = window.getSelection();
+  if (selection.rangeCount === 0) {
+    return;
+  }
+  
+  const range = selection.getRangeAt(0);
+  let node = range.commonAncestorContainer;
+  
+  // Check if we're in a list item
+  let listItem = null;
+  let listElement = null;
+  
+  while (node && node !== editorContent.value) {
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const tagName = node.tagName?.toLowerCase();
+      if (tagName === 'li') {
+        listItem = node;
+        listElement = node.parentElement;
+        break;
+      }
+    }
+    node = node.parentNode;
+  }
+  
+  // If we're in a list, create new list item
+  if (listItem && listElement) {
+    event.preventDefault();
+    
+    // Get current text in list item
+    const currentText = listItem.textContent.trim();
+    
+    // If list item is empty, exit list
+    if (currentText === '') {
+      // Move cursor out of list
+      const newRange = document.createRange();
+      const newTextNode = document.createTextNode('');
+      editorContent.value.insertBefore(newTextNode, listElement.nextSibling);
+      newRange.setStart(newTextNode, 0);
+      newRange.setEnd(newTextNode, 0);
+      selection.removeAllRanges();
+      selection.addRange(newRange);
+      editorContent.value.focus();
+      return;
+    }
+    
+    // Create new list item
+    const newLi = document.createElement('li');
+    listElement.appendChild(newLi);
+    
+    // Move cursor to new list item
+    const newRange = document.createRange();
+    newRange.setStart(newLi, 0);
+    newRange.setEnd(newLi, 0);
+    selection.removeAllRanges();
+    selection.addRange(newRange);
+    
+    // Focus editor
+    editorContent.value.focus();
+  } else {
+    // Not in list, just insert line break (Enter = new line)
+    event.preventDefault();
+    document.execCommand('insertLineBreak', false, null);
+  }
+};
+
+const insertBulletList = () => {
+  if (!editorContent.value) return;
+  
+  editorContent.value.focus();
+  
+  console.log('📝 [ZaloChatView] insertBulletList called');
+  
+  // Check if we're already in a list
+  const selection = window.getSelection();
+  if (selection.rangeCount > 0) {
+    const range = selection.getRangeAt(0);
+    let node = range.commonAncestorContainer;
+    
+    // Find the closest list element
+    while (node && node !== editorContent.value) {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const tagName = node.tagName.toLowerCase();
+        if (tagName === 'ul' || tagName === 'ol' || tagName === 'li') {
+          // Already in a list, remove it
+          console.log('📝 [ZaloChatView] Already in list, removing format');
+          document.execCommand('removeFormat', false, null);
+          handleEditorInput();
+          return;
+        }
+      }
+      node = node.parentNode;
+    }
+  }
+  
+  // Insert unordered list
+  try {
+    console.log('📝 [ZaloChatView] Attempting insertUnorderedList');
+    const success = document.execCommand('insertUnorderedList', false, null);
+    console.log('📝 [ZaloChatView] insertUnorderedList result:', success);
+    
+    if (!success) {
+      throw new Error('insertUnorderedList returned false');
+    }
+    
+    handleEditorInput();
+  } catch (e) {
+    console.error('❌ [ZaloChatView] Failed to insert bullet list:', e);
+    
+    // Fallback: manually create list structure
+    try {
+      const selection = window.getSelection();
+      if (selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        const selectedText = range.toString();
+        
+        if (selectedText) {
+          // Replace selected text with list
+          const ul = document.createElement('ul');
+          const li = document.createElement('li');
+          li.textContent = selectedText;
+          ul.appendChild(li);
+          range.deleteContents();
+          range.insertNode(ul);
+        } else {
+          // Insert empty list item at cursor
+          const ul = document.createElement('ul');
+          const li = document.createElement('li');
+          li.textContent = '\u2022 '; // Bullet character
+          ul.appendChild(li);
+          range.insertNode(ul);
+          
+          // Move cursor after bullet
+          range.setStartAfter(li);
+          range.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+        
+        handleEditorInput();
+        console.log('✅ [ZaloChatView] Fallback bullet list inserted');
+      }
+    } catch (fallbackError) {
+      console.error('❌ [ZaloChatView] Fallback also failed:', fallbackError);
+    }
+  }
+};
+
+const applyStyle = (style) => {
+  if (!editorContent.value) return;
+  
+  editorContent.value.focus();
+  document.execCommand(style, false, null);
+  
+  // Update style state based on current command state
+  if (style === 'bold') {
+    editorStyles.value.bold = document.queryCommandState('bold');
+  } else if (style === 'italic') {
+    editorStyles.value.italic = document.queryCommandState('italic');
+  } else if (style === 'underline') {
+    editorStyles.value.underline = document.queryCommandState('underline');
+  }
+  
+  handleEditorInput();
+};
+
+const applyColor = (color) => {
+  if (!editorContent.value) return;
+  
+  editorContent.value.focus();
+  
+  // Map color names to hex values
+  const colorHex = {
+    red: '#db342e',
+    orange: '#f27806',
+    yellow: '#f7b503',
+    green: '#15a85f',
+  };
+  
+  document.execCommand('foreColor', false, colorHex[color] || colorHex.red);
+  editorStyles.value.color = color;
+  handleEditorInput();
+};
+
+const clearStyles = () => {
+  if (!editorContent.value) return;
+  
+  editorContent.value.focus();
+  document.execCommand('removeFormat', false, null);
+  
+  editorStyles.value = {
+    bold: false,
+    italic: false,
+    underline: false,
+    color: null,
+  };
+  handleEditorInput();
+};
+
+// Extract styles from editor content for zalo-api-final format
+const extractStylesFromEditor = () => {
+  if (!editorContent.value || !editorContent.value.innerHTML) return null;
+  
+  // Get plain text first (for calculating positions)
+  const plainText = editorContent.value.innerText || editorContent.value.textContent || '';
+  if (!plainText.trim()) return null;
+  
+  // Parse HTML content and extract styles
+  const html = editorContent.value.innerHTML;
+  const styles = [];
+  
+  // Create a temporary div to parse HTML
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = html;
+  
+  // Map of color hex to zalo-api-final TextStyle enum values
+  const colorMap = {
+    '#db342e': 'c_db342e', // red
+    '#f27806': 'c_f27806', // orange
+    '#f7b503': 'c_f7b503', // yellow
+    '#15a85f': 'c_15a85f', // green
+  };
+  
+  // Helper to convert RGB to hex
+  const rgbToHex = (rgb) => {
+    if (!rgb) return null;
+    const result = rgb.match(/\d+/g);
+    if (!result || result.length < 3) return null;
+    const r = parseInt(result[0]).toString(16).padStart(2, '0');
+    const g = parseInt(result[1]).toString(16).padStart(2, '0');
+    const b = parseInt(result[2]).toString(16).padStart(2, '0');
+    return `#${r}${g}${b}`;
+  };
+  
+  // Traverse nodes and extract styles
+  const traverse = (node, startIndex = 0) => {
+    let currentIndex = startIndex;
+    
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent;
+      if (!text) return currentIndex;
+      
+      const parent = node.parentElement;
+      if (!parent) {
+        return currentIndex + text.length;
+      }
+      
+      const style = {};
+      let hasStyle = false;
+      
+      // Check for bold
+      if (parent.tagName === 'B' || parent.tagName === 'STRONG') {
+        style.bold = true;
+        hasStyle = true;
+      } else {
+        try {
+          const fontWeight = window.getComputedStyle(parent).fontWeight;
+          if (fontWeight === 'bold' || fontWeight === '700' || parseInt(fontWeight) >= 600) {
+            style.bold = true;
+            hasStyle = true;
+          }
+        } catch (e) {
+          // Ignore errors
+        }
+      }
+      
+      // Check for italic
+      if (parent.tagName === 'I' || parent.tagName === 'EM') {
+        style.italic = true;
+        hasStyle = true;
+      } else {
+        try {
+          const fontStyle = window.getComputedStyle(parent).fontStyle;
+          if (fontStyle === 'italic') {
+            style.italic = true;
+            hasStyle = true;
+          }
+        } catch (e) {
+          // Ignore errors
+        }
+      }
+      
+      // Check for underline
+      if (parent.tagName === 'U') {
+        style.underline = true;
+        hasStyle = true;
+      } else {
+        try {
+          const textDecoration = window.getComputedStyle(parent).textDecoration;
+          if (textDecoration && textDecoration.includes('underline')) {
+            style.underline = true;
+            hasStyle = true;
+          }
+        } catch (e) {
+          // Ignore errors
+        }
+      }
+      
+      // Check for color
+      try {
+        const color = window.getComputedStyle(parent).color;
+        const hexColor = rgbToHex(color);
+        if (hexColor && colorMap[hexColor.toLowerCase()]) {
+          style.color = colorMap[hexColor.toLowerCase()];
+          hasStyle = true;
+        }
+      } catch (e) {
+        // Ignore errors
+      }
+      
+      // Check for list (ul/ol) - traverse up to find list parent
+      // IMPORTANT: Check if parent is LI first, then traverse up to find UL/OL
+      let listParent = parent;
+      while (listParent && listParent !== tempDiv) {
+        const tagName = listParent.tagName?.toLowerCase();
+        if (tagName === 'ul') {
+          style.unorderedList = true;
+          hasStyle = true;
+          break;
+        } else if (tagName === 'ol') {
+          style.orderedList = true;
+          hasStyle = true;
+          break;
+        }
+        listParent = listParent.parentElement;
+      }
+      
+      // Always add style if we found list, even if text is empty (for list formatting)
+      if (hasStyle && (text.trim() || style.unorderedList || style.orderedList)) {
+        styles.push({
+          start: currentIndex,
+          end: currentIndex + text.length,
+          ...style
+        });
+      }
+      
+      return currentIndex + text.length;
+    }
+    
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const tagName = node.tagName?.toLowerCase();
+      
+      // For list items, process children normally (they contain text nodes)
+      if (tagName === 'li') {
+        for (const child of Array.from(node.childNodes)) {
+          currentIndex = traverse(child, currentIndex);
+        }
+        return currentIndex;
+      }
+      
+      // For ul/ol, process children but don't add index for the list element itself
+      if (tagName === 'ul' || tagName === 'ol') {
+        for (const child of Array.from(node.childNodes)) {
+          currentIndex = traverse(child, currentIndex);
+        }
+        return currentIndex;
+      }
+      
+      // For other elements, process children normally
+      for (const child of Array.from(node.childNodes)) {
+        currentIndex = traverse(child, currentIndex);
+      }
+    }
+    
+    return currentIndex;
+  };
+  
+  traverse(tempDiv);
+  
+  console.log('📝 [ZaloChatView] Extracted styles:', {
+    stylesCount: styles.length,
+    styles: styles,
+    plainText: plainText,
+    plainTextLength: plainText.length
+  });
+  
+  // Return styles array if we have any, otherwise return null
+  return styles.length > 0 ? styles : null;
+};
+
+// Upload file
+const uploadFile = async (file, textMessage = '') => {
+  if (!props.item?.id) return;
+  
+  uploading.value = true;
+  try {
+    const accountId = currentAccountId.value;
+    if (!accountId) {
+      throw new Error('No active account');
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('account_id', accountId);
+    formData.append('recipient_id', props.item.id);
+    formData.append('recipient_type', props.itemType === 'groups' ? 'group' : 'user');
+
+    // Upload file to server first (you'll need to create this endpoint)
+    const uploadResponse = await axios.post('/api/zalo/messages/upload-file', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+
+    if (uploadResponse.data.success) {
+      // Send message with file URL, absolute path, and optional text
+      const response = await axios.post('/api/zalo/messages/send', {
+        account_id: accountId,
+        recipient_id: props.item.id,
+        recipient_type: props.itemType === 'groups' ? 'group' : 'user',
+        message: textMessage || file.name, // Use text message if provided, otherwise use file name
+        media_url: uploadResponse.data.data.url, // Public URL for frontend display
+        media_path: uploadResponse.data.data.absolute_path, // Absolute path for zalo-service (no download needed!)
+        content_type: 'file',
+      });
+
+      if (response.data.success) {
+        // IMPORTANT: Do NOT push message here (optimistic update)
+        // WebSocket will receive and add the message automatically
+        
+        console.log('✅ [ZaloChatView] File sent, waiting for WebSocket');
+        
+        emit('message-sent');
+        clearFile();
+        
+        // Show success toast
+        Swal.fire({
+          icon: 'success',
+          title: t('common.success'),
+          text: t('zalo.file_sent') || 'File sent successfully',
+          toast: true,
+          position: 'top-end',
+          showConfirmButton: false,
+          timer: 2000,
+        });
+      } else {
+        console.error('❌ [ZaloChatView] File send failed:', response.data);
+        // Clear file on send failure
+        clearFile();
+      }
+    } else {
+      console.error('❌ [ZaloChatView] File upload response not successful:', uploadResponse.data);
+      // Clear file on upload failure
+      clearFile();
+    }
+  } catch (error) {
+    console.error('❌ [ZaloChatView] Failed to upload file:', error);
+    // Clear file on error
+    clearFile();
+  } finally {
+    uploading.value = false;
+  }
+};
+
+// Upload image
+const uploadImage = async (file, textMessage = '') => {
+  console.log('🚀 [ZaloChatView] uploadImage called - THIS IS WHERE UPLOAD STARTS');
+  
+  if (!props.item?.id) {
+    console.error('❌ [ZaloChatView] uploadImage blocked: No item.id');
+    return;
+  }
+  
+  console.log('🚀 [ZaloChatView] uploadImage proceeding with:', {
+    file_name: file?.name,
+    file_size: file?.size,
+    item_id: props.item?.id,
+    textMessage_length: textMessage?.length || 0,
+  });
+  
+  uploading.value = true;
+  try {
+    const accountId = currentAccountId.value;
+    if (!accountId) {
+      console.error('❌ [ZaloChatView] No active account for image upload');
+      throw new Error('No active account');
+    }
+
+    // Ensure account_id is a number (Laravel expects integer)
+    const accountIdNum = typeof accountId === 'string' ? parseInt(accountId, 10) : accountId;
+    if (isNaN(accountIdNum)) {
+      console.error('❌ [ZaloChatView] Invalid account_id:', accountId);
+      throw new Error('Invalid account ID');
+    }
+
+    const formData = new FormData();
+    
+    // CRITICAL: Verify file before appending
+    console.log('🔍 [ZaloChatView] File before FormData:', {
+      has_file: !!file,
+      is_file: file instanceof File,
+      is_blob: file instanceof Blob,
+      file_name: file?.name,
+      file_size: file?.size,
+      file_type: file?.type,
+    });
+    
+    formData.append('image', file, file.name); // Include filename explicitly
+    formData.append('account_id', accountIdNum.toString());
+    formData.append('recipient_id', props.item.id.toString());
+    formData.append('recipient_type', props.itemType === 'groups' ? 'group' : 'user');
+
+    console.log('📤 [ZaloChatView] Uploading image:', {
+      account_id: accountId,
+      account_id_type: typeof accountId,
+      account_id_num: accountIdNum,
+      recipient_id: props.item.id,
+      recipient_id_type: typeof props.item.id,
+      has_text: !!textMessage,
+      text_length: textMessage.length,
+      file_name: file.name,
+      file_size: file.size,
+      file_type: file.type,
+      has_file: !!file,
+      file_is_file: file instanceof File,
+    });
+    
+    // Log FormData contents (for debugging)
+    console.log('📤 [ZaloChatView] FormData entries:', {
+      has_image: formData.has('image'),
+      account_id: formData.get('account_id'),
+      recipient_id: formData.get('recipient_id'),
+      recipient_type: formData.get('recipient_type'),
+      formData_keys: Array.from(formData.keys()),
+      image_entry: formData.get('image'), // Should be File object
+    });
+
+    // Upload image to server first
+    // CRITICAL: Don't set Content-Type header - axios will set it automatically with boundary
+    console.log('📡 [ZaloChatView] Sending FormData to server...');
+    
+    const uploadResponse = await axios.post('/api/zalo/messages/upload-image', formData, {
+      headers: {
+        // Don't set Content-Type - let axios handle it automatically
+        'Accept': 'application/json',
+      },
+      // Ensure proper FormData handling
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+      // Add timeout to prevent hanging
+      timeout: 120000, // 2 minutes
+    });
+    
+    console.log('📡 [ZaloChatView] Upload response status:', uploadResponse.status);
+
+    console.log('📥 [ZaloChatView] Image upload response:', {
+      success: uploadResponse.data.success,
+      has_url: !!uploadResponse.data.data?.url,
+      url: uploadResponse.data.data?.url,
+      full_response: uploadResponse.data,
+    });
+
+    if (uploadResponse.data.success && uploadResponse.data.data?.url) {
+      const imageUrl = uploadResponse.data.data.url; // Public URL for display
+      const imagePath = uploadResponse.data.data.absolute_path; // Absolute path for zalo-service
+      
+      console.log('📤 [ZaloChatView] Sending message with image:', {
+        account_id: accountId,
+        recipient_id: props.item.id,
+        recipient_type: props.itemType === 'groups' ? 'group' : 'user',
+        message: textMessage || '',
+        media_url: imageUrl,
+        media_path: imagePath,
+        content_type: 'image',
+      });
+      
+      // Send message with image URL and optional text
+      const response = await axios.post('/api/zalo/messages/send', {
+        account_id: accountId,
+        recipient_id: props.item.id,
+        recipient_type: props.itemType === 'groups' ? 'group' : 'user',
+        message: textMessage || '', // Use provided text message
+        media_url: imageUrl, // Public URL for display
+        media_path: imagePath, // Absolute path for zalo-service to avoid localhost download
+        content_type: 'image', // CRITICAL: Must specify content_type as 'image'
+      });
+      
+      console.log('📥 [ZaloChatView] Image send response:', {
+        success: response.data.success,
+        has_data: !!response.data.data,
+        response_data: response.data,
+      });
+
+      if (response.data.success) {
+        // IMPORTANT: Do NOT push message here (optimistic update)
+        // WebSocket will receive and add the message automatically
+        // This prevents duplicate messages
+        
+        console.log('✅ [ZaloChatView] Image sent, waiting for WebSocket');
+        
+        emit('message-sent');
+        clearImage();
+        
+        // Show success toast
+        Swal.fire({
+          icon: 'success',
+          title: t('common.success'),
+          text: t('zalo.image_sent') || 'Image sent successfully',
+          toast: true,
+          position: 'top-end',
+          showConfirmButton: false,
+          timer: 2000,
+        });
+      } else {
+        console.error('❌ [ZaloChatView] Image upload failed:', uploadResponse.data);
+        // Clear image on upload failure
+        clearImage();
+      }
+    } else {
+      console.error('❌ [ZaloChatView] Image upload response not successful:', uploadResponse.data);
+      // Clear image on upload failure
+      clearImage();
+    }
+  } catch (error) {
+    console.error('❌ [ZaloChatView] Failed to upload image:', {
+      error: error.message,
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      response_data: error.response?.data,
+      request_config: error.config,
+    });
+    
+    // Show user-friendly error message
+    if (error.response?.data?.message) {
+      console.error('❌ [ZaloChatView] Error message from server:', error.response.data.message);
+    }
+    
+    // Clear image on error
+    clearImage();
+  } finally {
+    uploading.value = false;
+  }
+};
+
+// Upload video
+const uploadVideo = async (file, textMessage = '') => {
+  if (!props.item?.id) return;
+  
+  uploading.value = true;
+  try {
+    const accountId = currentAccountId.value;
+    if (!accountId) {
+      throw new Error('No active account');
+    }
+
+    const formData = new FormData();
+    formData.append('video', file);
+    formData.append('account_id', accountId);
+    formData.append('recipient_id', props.item.id);
+    formData.append('recipient_type', props.itemType === 'groups' ? 'group' : 'user');
+
+    // Upload video to server first
+    const uploadResponse = await axios.post('/api/zalo/messages/upload-video', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+
+    if (uploadResponse.data.success) {
+      const videoUrl = uploadResponse.data.data.url;
+      const thumbnailUrl = uploadResponse.data.data.thumbnail_url || videoUrl;
+      const duration = uploadResponse.data.data.duration || 0;
+      const width = uploadResponse.data.data.width || 0;
+      const height = uploadResponse.data.data.height || 0;
+
+      // Send video via zalo-service
+      const zaloServiceUrl = import.meta.env.VITE_ZALO_SERVICE_URL;
+      const apiKey = import.meta.env.VITE_ZALO_SERVICE_API_KEY;
+
+      const response = await axios.post(
+        `${zaloServiceUrl}/api/message/send-video`,
+        {
+          to: props.item.id,
+          videoUrl: videoUrl,
+          thumbnailUrl: thumbnailUrl,
+          duration: duration,
+          width: width,
+          height: height,
+          msg: textMessage || '',
+          type: props.itemType === 'groups' ? 'group' : 'user',
+        },
+        {
+          headers: {
+            'X-API-Key': apiKey,
+            'X-Account-Id': accountId,
+          },
+        }
+      );
+
+      if (response.data.success) {
+        emit('message-sent');
+        clearVideo();
+        
+        useSwal().fire({
+          icon: 'success',
+          title: t('common.success'),
+          text: t('zalo.video_sent') || 'Video sent successfully',
+          toast: true,
+          position: 'top-end',
+          showConfirmButton: false,
+          timer: 2000,
+        });
+      }
+    }
+  } catch (error) {
+    console.error('❌ [ZaloChatView] Failed to upload video:', error);
+    useSwal().fire({
+      icon: 'error',
+      title: t('common.error') || 'Lỗi',
+      text: error.response?.data?.message || t('zalo.video_send_failed') || 'Không thể gửi video',
+    });
+    clearVideo();
+  } finally {
+    uploading.value = false;
+  }
+};
+
+// Upload audio
+const uploadAudio = async (file, textMessage = '') => {
+  if (!props.item?.id) return;
+  
+  uploading.value = true;
+  try {
+    const accountId = currentAccountId.value;
+    if (!accountId) {
+      throw new Error('No active account');
+    }
+
+    const formData = new FormData();
+    formData.append('audio', file);
+    formData.append('account_id', accountId);
+    formData.append('recipient_id', props.item.id);
+    formData.append('recipient_type', props.itemType === 'groups' ? 'group' : 'user');
+
+    // Upload audio to server first
+    const uploadResponse = await axios.post('/api/zalo/messages/upload-audio', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+
+    if (uploadResponse.data.success) {
+      const voiceUrl = uploadResponse.data.data.url;
+
+      // Send audio via zalo-service
+      const zaloServiceUrl = import.meta.env.VITE_ZALO_SERVICE_URL;
+      const apiKey = import.meta.env.VITE_ZALO_SERVICE_API_KEY;
+
+      const response = await axios.post(
+        `${zaloServiceUrl}/api/message/send-voice`,
+        {
+          to: props.item.id,
+          voiceUrl: voiceUrl,
+          type: props.itemType === 'groups' ? 'group' : 'user',
+        },
+        {
+          headers: {
+            'X-API-Key': apiKey,
+            'X-Account-Id': accountId,
+          },
+        }
+      );
+
+      if (response.data.success) {
+        emit('message-sent');
+        clearAudio();
+        
+        useSwal().fire({
+          icon: 'success',
+          title: t('common.success'),
+          text: t('zalo.audio_sent') || 'Audio sent successfully',
+          toast: true,
+          position: 'top-end',
+          showConfirmButton: false,
+          timer: 2000,
+        });
+      }
+    }
+  } catch (error) {
+    console.error('❌ [ZaloChatView] Failed to upload audio:', error);
+    useSwal().fire({
+      icon: 'error',
+      title: t('common.error') || 'Lỗi',
+      text: error.response?.data?.message || t('zalo.audio_send_failed') || 'Không thể gửi audio',
+    });
+    clearAudio();
+  } finally {
+    uploading.value = false;
+  }
+};
+
+// Upload folder (create zip and send)
+const uploadFolder = async (files, textMessage = '') => {
+  if (!props.item?.id || !files || files.length === 0) return;
+  
+  uploading.value = true;
+  try {
+    const accountId = currentAccountId.value;
+    if (!accountId) {
+      throw new Error('No active account');
+    }
+
+    // Get folder name from first file's path or use default
+    const folderName = files[0]?.webkitRelativePath?.split('/')[0] || 'Folder_' + Date.now();
+
+    // Upload folder (files will be zipped on server)
+    const formData = new FormData();
+    files.forEach((file) => {
+      formData.append('files[]', file);
+    });
+    formData.append('account_id', accountId);
+    formData.append('recipient_id', props.item.id);
+    formData.append('recipient_type', props.itemType === 'groups' ? 'group' : 'user');
+    formData.append('folder_name', folderName);
+
+    const uploadResponse = await axios.post('/api/zalo/messages/upload-folder', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+
+    if (uploadResponse.data.success) {
+      const zipUrl = uploadResponse.data.data.url;
+      const zipPath = uploadResponse.data.data.absolute_path;
+      const zipFileName = uploadResponse.data.data.filename;
+      const fileCount = uploadResponse.data.data.file_count;
+
+      // Send folder via zalo-service
+      const zaloServiceUrl = import.meta.env.VITE_ZALO_SERVICE_URL;
+      const apiKey = import.meta.env.VITE_ZALO_SERVICE_API_KEY;
+
+      const response = await axios.post(
+        `${zaloServiceUrl}/api/message/send-folder`,
+        {
+          to: props.item.id,
+          zipPath: zipPath,
+          folderName: folderName,
+          type: props.itemType === 'groups' ? 'group' : 'user',
+        },
+        {
+          headers: {
+            'X-API-Key': apiKey,
+            'X-Account-Id': accountId,
+          },
+        }
+      );
+
+      if (response.data.success) {
+        // Send message with folder metadata via Laravel API
+        await axios.post('/api/zalo/messages/send', {
+          account_id: accountId,
+          recipient_id: props.item.id,
+          recipient_type: props.itemType === 'groups' ? 'group' : 'user',
+          message: textMessage || folderName,
+          media_url: zipUrl,
+          media_path: zipPath,
+          content_type: 'folder',
+          metadata: {
+            folder_name: folderName,
+            file_count: fileCount,
+            zip_filename: zipFileName,
+          },
+        });
+
+        emit('message-sent');
+        clearFolder();
+        
+        useSwal().fire({
+          icon: 'success',
+          title: t('common.success'),
+          text: `${t('zalo.folder_sent') || 'Folder sent successfully'} (${fileCount} ${t('zalo.files') || 'files'})`,
+          toast: true,
+          position: 'top-end',
+          showConfirmButton: false,
+          timer: 2000,
+        });
+      }
+    }
+  } catch (error) {
+    console.error('❌ [ZaloChatView] Failed to upload folder:', error);
+    useSwal().fire({
+      icon: 'error',
+      title: t('common.error') || 'Lỗi',
+      text: error.response?.data?.message || t('zalo.folder_send_failed') || 'Không thể gửi folder',
+    });
+    clearFolder();
+  } finally {
+    uploading.value = false;
+  }
+};
+
+// Handle folder download - extract zip to folder
+const handleFolderDownload = async (event, message) => {
+  event.preventDefault();
+  
+  try {
+    const zipUrl = message.media_url || message.metadata?.file?.href;
+    const folderName = message.metadata?.folder_name || message.content || 'Folder';
+    
+    if (!zipUrl) {
+      throw new Error('No download URL available');
+    }
+
+    // Download zip file
+    const response = await axios.get(zipUrl, { responseType: 'blob' });
+    const blob = new Blob([response.data], { type: 'application/zip' });
+    const url = window.URL.createObjectURL(blob);
+    
+    // Create download link
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = folderName + '.zip';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+
+    // Show notification with instructions
+    useSwal().fire({
+      icon: 'info',
+      title: t('zalo.folder_downloaded') || 'Folder downloaded',
+      html: `
+        <p>${t('zalo.folder_extract_instructions') || 'Please extract the zip file to view the folder contents.'}</p>
+        <p class="text-sm mt-2">${folderName}.zip</p>
+      `,
+      confirmButtonText: t('common.ok') || 'OK',
+    });
+  } catch (error) {
+    console.error('❌ [ZaloChatView] Failed to download folder:', error);
+    useSwal().fire({
+      icon: 'error',
+      title: t('common.error') || 'Lỗi',
+      text: error.message || t('zalo.folder_download_failed') || 'Không thể tải folder',
+    });
+  }
+};
+
+// Clear file
+const clearFile = () => {
+  selectedFile.value = null;
+  if (fileInput.value) fileInput.value.value = '';
+};
+
+// Clear image
+const clearImage = () => {
+  selectedImage.value = null;
+  selectedImagePreview.value = null;
+  if (imageInput.value) imageInput.value.value = '';
+};
+
+// Clear video
+const clearVideo = () => {
+  selectedVideo.value = null;
+  if (videoInput.value) videoInput.value.value = '';
+};
+
+// Clear audio
+const clearAudio = () => {
+  selectedAudio.value = null;
+  if (audioInput.value) audioInput.value.value = '';
+};
+
+// Clear folder
+const clearFolder = () => {
+  selectedFolder.value = null;
+  if (folderInput.value) folderInput.value.value = '';
+};
+
+// 🔥 NEW: Mark conversation as read
+const markConversationAsRead = async (recipientId) => {
+  if (!currentAccountId.value || !recipientId) return;
+
+  try {
+    const branchId = localStorage.getItem('current_branch_id');
+    await axios.post('/api/zalo/mark-as-read', {
+      branch_id: branchId,
+      account_id: currentAccountId.value,
+      recipient_id: recipientId
+    });
+
+    console.log('✅ [ZaloChatView] Marked conversation as read:', recipientId);
+
+    // Update unread count in props.item if available
+    if (props.item && props.item.id === recipientId) {
+      props.item.unread_count = 0;
+    }
+  } catch (error) {
+    console.error('❌ [ZaloChatView] Error marking as read:', error);
+  }
+};
+
+// Send message
+const sendMessage = async () => {
+  console.log('📤 [ZaloChatView] sendMessage called (Send button clicked)');
+  
+  // Get text from editor if editor is active, otherwise from textarea
+  let textToSend = '';
+  if (showEditor.value && editorContent.value) {
+    textToSend = editorContent.value.innerText || editorContent.value.textContent || '';
+  } else {
+    textToSend = messageText.value.trim();
+  }
+  
+  if ((!textToSend && !selectedFile.value && !selectedImage.value && !selectedVideo.value && !selectedAudio.value && !selectedFolder.value) || sending.value || uploading.value) {
+    console.log('⚠️ [ZaloChatView] sendMessage blocked:', {
+      has_text: !!textToSend,
+      has_selectedFile: !!selectedFile.value,
+      has_selectedImage: !!selectedImage.value,
+      has_selectedVideo: !!selectedVideo.value,
+      has_selectedAudio: !!selectedAudio.value,
+      has_selectedFolder: !!selectedFolder.value,
+      sending: sending.value,
+      uploading: uploading.value,
+    });
+    return;
+  }
+  
+  if (!props.item?.id) {
+    console.log('⚠️ [ZaloChatView] sendMessage blocked: No item.id');
+    return;
+  }
+
+  console.log('📤 [ZaloChatView] sendMessage proceeding:', {
+    has_text: !!textToSend,
+    text_length: textToSend.length,
+    has_selectedImage: !!selectedImage.value,
+    has_selectedFile: !!selectedFile.value,
+    has_selectedVideo: !!selectedVideo.value,
+    has_selectedAudio: !!selectedAudio.value,
+    has_selectedFolder: !!selectedFolder.value,
+  });
+
+  // Helper function to clear editor/content
+  const clearEditorContent = () => {
+    if (showEditor.value && editorContent.value) {
+      editorContent.value.innerHTML = '';
+      editorStyles.value = {
+        bold: false,
+        italic: false,
+        underline: false,
+        color: null,
+      };
+      // Also clear messageText to sync
+      messageText.value = '';
+    } else {
+      messageText.value = '';
+    }
+  };
+
+  // If there's a selected folder, send all files
+  if (selectedFolder.value && selectedFolder.value.length > 0) {
+    console.log('📤 [ZaloChatView] Folder selected, sending files...', {
+      file_count: selectedFolder.value.length,
+    });
+    const text = textToSend;
+    clearEditorContent();
+    await uploadFolder(selectedFolder.value, text);
+    return;
+  }
+
+  // If there's a selected video, upload and send it
+  if (selectedVideo.value) {
+    console.log('📤 [ZaloChatView] Video selected, uploading and sending...', {
+      video_name: selectedVideo.value.name,
+      video_size: selectedVideo.value.size,
+    });
+    const text = textToSend;
+    clearEditorContent();
+    await uploadVideo(selectedVideo.value, text);
+    return;
+  }
+
+  // If there's a selected audio, upload and send it
+  if (selectedAudio.value) {
+    console.log('📤 [ZaloChatView] Audio selected, uploading and sending...', {
+      audio_name: selectedAudio.value.name,
+      audio_size: selectedAudio.value.size,
+    });
+    const text = textToSend;
+    clearEditorContent();
+    await uploadAudio(selectedAudio.value, text);
+    return;
+  }
+
+  // If there's a selected image, upload and send it with optional text
+  if (selectedImage.value) {
+    console.log('📤 [ZaloChatView] Image selected, NOW uploading and sending...', {
+      image_name: selectedImage.value.name,
+      image_size: selectedImage.value.size,
+      has_text: !!textToSend,
+    });
+    const text = textToSend;
+    clearEditorContent();
+    await uploadImage(selectedImage.value, text);
+    return;
+  }
+
+  // If there's a selected file, upload and send it with optional text
+  if (selectedFile.value) {
+    console.log('📤 [ZaloChatView] File selected, uploading and sending...', {
+      file_name: selectedFile.value.name,
+      file_size: selectedFile.value.size,
+      has_text: !!textToSend,
+    });
+    const text = textToSend;
+    clearEditorContent();
+    await uploadFile(selectedFile.value, text);
+    return;
+  }
+
+  // Send text message only (with styles if editor is active)
+  console.log('📤 [ZaloChatView] Sending text message only');
+  const text = textToSend;
+  
+  // Extract styles from editor if active (before clearing)
+  let styles = null;
+  if (showEditor.value && editorContent.value && text) {
+    styles = extractStylesFromEditor();
+    console.log('📤 [ZaloChatView] Extracted styles for sending:', {
+      styles: styles,
+      textLength: text.length,
+      textPreview: text.substring(0, 50),
+      hasUnorderedList: styles?.some(s => s.unorderedList),
+      hasOrderedList: styles?.some(s => s.orderedList)
+    });
+  }
+  
+  // Clear editor/content after extracting styles
+  clearEditorContent();
+  
+  await sendTextMessage(text, styles);
+};
+
+// Send text message (extracted for reuse)
+const sendTextMessage = async (text, styles = null) => {
+  sending.value = true;
+
+  // Declare variables outside try block to use in catch
+  let accountId = null;
+  let recipientId = null;
+
+  try {
+    accountId = currentAccountId.value;
+    if (!accountId) {
+      console.error('❌ [ZaloChatView] No active account');
+      throw new Error('No active account');
+    }
+
+    recipientId = props.item.id || props.item.userId || props.item.groupId;
+    if (!recipientId) {
+      console.error('❌ [ZaloChatView] No recipient ID', props.item);
+      throw new Error('No recipient ID');
+    }
+
+    // Check if message contains a URL (link)
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const urlMatch = text.match(urlRegex);
+    const hasLink = urlMatch && urlMatch.length > 0;
+
+    const payload = {
+      account_id: accountId,
+      recipient_id: recipientId,
+      recipient_type: props.itemType === 'groups' ? 'group' : 'user',
+      message: text,
+    };
+
+    // Add styles if provided (for rich text)
+    if (styles && Array.isArray(styles) && styles.length > 0) {
+      payload.styles = styles;
+    }
+
+    // If message contains URL, treat as link
+    if (hasLink && urlMatch[0]) {
+      payload.media_url = urlMatch[0];
+      payload.content_type = 'link';
+    }
+
+    console.log('📤 [ZaloChatView] Sending text message:', {
+      account_id: accountId,
+      recipient_id: recipientId,
+      recipient_type: payload.recipient_type,
+      message_length: text.length,
+      has_link: hasLink,
+      payload,
+    });
+
+    const response = await axios.post('/api/zalo/messages/send', payload);
+    
+    console.log('📥 [ZaloChatView] Response received:', {
+      success: response.data.success,
+      message: response.data.message,
+      has_data: !!response.data.data,
+    });
+
+    if (response.data.success) {
+      console.log('✅ [ZaloChatView] Message sent successfully, waiting for WebSocket');
+      
+      // IMPORTANT: Do NOT push message here!
+      // WebSocket will receive and add it automatically
+      
+      emit('message-sent');
+    } else {
+      console.error('❌ [ZaloChatView] Message send failed:', response.data);
+      throw new Error(response.data.message || 'Failed to send message');
+    }
+  } catch (error) {
+    console.error('❌ [ZaloChatView] Send message error:', {
+      error: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+      payload: {
+        account_id: accountId,
+        recipient_id: recipientId,
+        recipient_type: props.itemType === 'groups' ? 'group' : 'user',
+      },
+    });
+    
+    messageText.value = text; // Restore message on error
+    
+    // Show user-friendly error message
+    const errorData = error.response?.data;
+    const errorMessage = errorData?.message || error.message || 'Failed to send message';
+    const isCookieExpired = errorData?.details?.cookie_expired || 
+                            errorData?.cookie_expired ||
+                            errorMessage.toLowerCase().includes('cookie') ||
+                            errorMessage.toLowerCase().includes('expired') ||
+                            errorMessage.toLowerCase().includes('đăng nhập') ||
+                            errorMessage.toLowerCase().includes('re-login');
+    
+    // Show user-friendly error message using Swal
+    Swal.fire({
+      icon: isCookieExpired ? 'warning' : 'error',
+      title: isCookieExpired ? (t('zalo.cookie_expired') || 'Cookie Expired') : (t('common.error') || 'Error'),
+      html: isCookieExpired 
+        ? `<p>${errorMessage}</p><p class="mt-2 text-sm text-gray-600">${errorData?.details?.hint || 'Please re-login your Zalo account in Account Manager.'}</p>`
+        : errorMessage,
+      confirmButtonText: isCookieExpired 
+        ? (t('zalo.go_to_account_manager') || 'Go to Account Manager')
+        : (t('common.ok') || 'OK'),
+    }).then((result) => {
+      if (isCookieExpired && result.isConfirmed) {
+        // Emit event to navigate to account manager
+        window.dispatchEvent(new CustomEvent('zalo-navigate', { detail: { view: 'accounts' } }));
+      }
+    });
+  } finally {
+    sending.value = false;
+  }
+};
+
+// Handle sticker selection from picker
+const handleStickerSelect = async (sticker) => {
+  sending.value = true;
+
+  // Declare variables outside try block to use in catch
+  let accountId = null;
+  let recipientId = null;
+
+  try {
+    accountId = currentAccountId.value;
+    if (!accountId) {
+      console.error('❌ [ZaloChatView] No active account');
+      throw new Error('No active account');
+    }
+
+    recipientId = props.item.id || props.item.userId || props.item.groupId;
+    if (!recipientId) {
+      console.error('❌ [ZaloChatView] No recipient ID', props.item);
+      throw new Error('No recipient ID');
+    }
+
+    console.log('🎨 [ZaloChatView] Sending sticker:', {
+      account_id: accountId,
+      recipient_id: recipientId,
+      sticker,
+    });
+
+    // Step 1: Send sticker via zalo-service
+    const zaloServiceUrl = import.meta.env.VITE_ZALO_SERVICE_URL;
+    const apiKey = import.meta.env.VITE_ZALO_SERVICE_API_KEY;
+
+    const stickerResponse = await axios.post(
+      `${zaloServiceUrl}/api/message/send-sticker`,
+      {
+        to: recipientId,
+        sticker: {
+          id: sticker.id,
+          cateId: sticker.cateId,
+          type: sticker.type,
+        },
+        type: props.itemType === 'groups' ? 'group' : 'user',
+      },
+      {
+        headers: {
+          'X-API-Key': apiKey,
+          'X-Account-Id': accountId,
+        },
+      }
+    );
+
+    console.log('✅ [ZaloChatView] Sticker sent successfully via zalo-service:', stickerResponse.data);
+    console.log('ℹ️ [ZaloChatView] WebSocket will handle saving message and recording recent sticker');
+
+    // Close sticker picker
+    showStickerPicker.value = false;
+
+    // Emit message sent event
+    emit('message-sent');
+  } catch (error) {
+    console.error('❌ [ZaloChatView] Send sticker error:', {
+      error: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+    });
+
+    // Show user-friendly error message
+    const errorData = error.response?.data;
+    const errorMessage = errorData?.message || error.message || 'Failed to send sticker';
+    const isCookieExpired =
+      errorData?.details?.cookie_expired ||
+      errorData?.cookie_expired ||
+      errorMessage.toLowerCase().includes('cookie') ||
+      errorMessage.toLowerCase().includes('expired') ||
+      errorMessage.toLowerCase().includes('đăng nhập') ||
+      errorMessage.toLowerCase().includes('re-login');
+
+    Swal.fire({
+      icon: isCookieExpired ? 'warning' : 'error',
+      title: isCookieExpired
+        ? t('zalo.cookie_expired') || 'Cookie Expired'
+        : t('common.error') || 'Error',
+      html: isCookieExpired
+        ? `<p>${errorMessage}</p><p class="mt-2 text-sm text-gray-600">${
+            errorData?.details?.hint || 'Please re-login your Zalo account in Account Manager.'
+          }</p>`
+        : errorMessage,
+      confirmButtonText: isCookieExpired
+        ? t('zalo.go_to_account_manager') || 'Go to Account Manager'
+        : t('common.ok') || 'OK',
+    }).then((result) => {
+      if (isCookieExpired && result.isConfirmed) {
+        // Emit event to navigate to account manager
+        window.dispatchEvent(new CustomEvent('zalo-navigate', { detail: { view: 'accounts' } }));
+      }
+    });
+  } finally {
+    sending.value = false;
+  }
+};
+
+// Create event/reminder
+const createEvent = async () => {
+  if (!eventForm.value.title.trim() || !eventForm.value.datetime || creatingEvent.value) {
+    return;
+  }
+
+  creatingEvent.value = true;
+
+  try {
+    const accountId = currentAccountId.value;
+    if (!accountId) {
+      throw new Error('No active account');
+    }
+
+    const recipientId = props.item.id || props.item.userId || props.item.groupId;
+    if (!recipientId) {
+      throw new Error('No recipient ID');
+    }
+
+    // Convert datetime to timestamp (in seconds for Zalo API)
+    const startTime = Math.floor(new Date(eventForm.value.datetime).getTime() / 1000);
+
+    console.log('📅 [ZaloChatView] Creating event:', {
+      account_id: accountId,
+      recipient_id: recipientId,
+      title: eventForm.value.title,
+      datetime: eventForm.value.datetime,
+      startTime,
+      emoji: eventForm.value.emoji,
+      repeat: eventForm.value.repeat,
+    });
+
+    const zaloServiceUrl = import.meta.env.VITE_ZALO_SERVICE_URL;
+    const apiKey = import.meta.env.VITE_ZALO_SERVICE_API_KEY;
+
+    const response = await axios.post(
+      `${zaloServiceUrl}/api/message/create-reminder`,
+      {
+        thread_id: recipientId,
+        title: eventForm.value.title.trim(),
+        start_time: startTime,
+        type: props.itemType === 'groups' ? 'group' : 'user',
+        emoji: eventForm.value.emoji,
+        repeat: parseInt(eventForm.value.repeat),
+      },
+      {
+        headers: {
+          'X-API-Key': apiKey,
+          'X-Account-Id': accountId,
+        },
+      }
+    );
+
+    console.log('✅ [ZaloChatView] Event created successfully:', response.data);
+
+    // Close modal and reset form
+    showEventModal.value = false;
+    eventForm.value = {
+      title: '',
+      datetime: '',
+      emoji: '⏰',
+      repeat: '0',
+    };
+
+    // Show success message
+    Swal.fire({
+      icon: 'success',
+      title: t('zalo.event_created') || 'Đã tạo sự kiện',
+      text: t('zalo.event_created_desc') || 'Sự kiện đã được tạo thành công.',
+      timer: 2000,
+      showConfirmButton: false,
+    });
+
+    emit('message-sent');
+  } catch (error) {
+    console.error('❌ [ZaloChatView] Create event error:', {
+      error: error.message,
+      response: error.response?.data,
+      status: error.response?.status,
+    });
+
+    const errorData = error.response?.data;
+    const errorMessage = errorData?.message || errorData?.error || error.message || 'Failed to create event';
+
+    Swal.fire({
+      icon: 'error',
+      title: t('common.error') || 'Lỗi',
+      text: errorMessage,
+    });
+  } finally {
+    creatingEvent.value = false;
+  }
+};
+
+// Scroll to bottom
+const scrollToBottom = (smooth = false) => {
+  if (messagesContainer.value) {
+    if (smooth) {
+      messagesContainer.value.scrollTo({
+        top: messagesContainer.value.scrollHeight,
+        behavior: 'smooth'
+      });
+    } else {
+      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
+    }
+  }
+};
+
+// Scroll to quoted message
+const scrollToQuotedMessage = async (messageId) => {
+  if (!messageId) return;
+  
+  console.log('🔍 [ZaloChatView] Scrolling to quoted message:', messageId);
+  
+  // Wait for next tick to ensure DOM is updated
+  await nextTick();
+  
+  // Try to find message by ID in current messages list
+  const messageElement = document.getElementById(`message-${messageId}`);
+  
+  if (messageElement && messagesContainer.value) {
+    // Message is in current view, scroll to it
+    messageElement.scrollIntoView({ 
+      behavior: 'smooth', 
+      block: 'center',
+      inline: 'nearest'
+    });
+    
+    // Highlight the message briefly
+    messageElement.classList.add('ring-2', 'ring-blue-500', 'ring-opacity-50');
+    setTimeout(() => {
+      messageElement.classList.remove('ring-2', 'ring-blue-500', 'ring-opacity-50');
+    }, 2000);
+    
+    console.log('✅ [ZaloChatView] Scrolled to message:', messageId);
+  } else {
+    // Message not in current view, try to load more messages
+    console.log('⚠️  [ZaloChatView] Message not found in current view, attempting to load...');
+    
+    // Check if message exists in database by loading messages with a filter
+    try {
+      const accountId = currentAccountId.value;
+      if (!accountId) return;
+      
+      // Load messages and find the one we're looking for
+      const response = await axios.get('/api/zalo/messages', {
+        params: {
+          account_id: accountId,
+          recipient_id: props.item.id,
+          recipient_type: recipientType.value,
+          per_page: 200, // Load more messages to find the quoted one
+        },
+      });
+      
+      if (response.data.success) {
+        messages.value = response.data.data || [];
+        
+        // Wait for DOM update
+        await nextTick();
+        
+        // Try to find and scroll to the message again
+        const foundElement = document.getElementById(`message-${messageId}`);
+        if (foundElement && messagesContainer.value) {
+          foundElement.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'center',
+            inline: 'nearest'
+          });
+          
+          // Highlight the message briefly
+          foundElement.classList.add('ring-2', 'ring-blue-500', 'ring-opacity-50');
+          setTimeout(() => {
+            foundElement.classList.remove('ring-2', 'ring-blue-500', 'ring-opacity-50');
+          }, 2000);
+          
+          console.log('✅ [ZaloChatView] Found and scrolled to message after loading:', messageId);
+        } else {
+          console.warn('⚠️  [ZaloChatView] Message still not found after loading:', messageId);
+        }
+      }
+    } catch (error) {
+      console.error('❌ [ZaloChatView] Failed to load messages for scroll:', error);
+    }
+  }
+};
+
+// Format time
+const formatTime = (dateString) => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  const now = new Date();
+  const diff = now - date;
+  const minutes = Math.floor(diff / 60000);
+  
+  if (minutes < 1) return t('zalo.just_now');
+  if (minutes < 60) return `${minutes}${t('zalo.minutes_ago')}`;
+  if (date.toDateString() === now.toDateString()) {
+    return date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+  }
+  return date.toLocaleString('vi-VN');
+};
+
+// Open media
+const openMedia = (url) => {
+  window.open(url, '_blank');
+};
+
+// Start reply
+const startReply = (message) => {
+  replyingTo.value = {
+    id: message.id,
+    message_id: message.message_id,
+    content: message.content,
+    sender_name: message.type === 'sent' ? 'You' : message.recipient_name,
+    type: message.type,
+  };
+  replyText.value = '';
+  // Scroll messages container to bottom to show reply input
+  nextTick(() => {
+    if (messagesContainer.value) {
+      messagesContainer.value.scrollTo({
+        top: messagesContainer.value.scrollHeight,
+        behavior: 'smooth'
+      });
+    }
+
+    // Focus on reply textarea after scroll animation
+    setTimeout(() => {
+      const textarea = document.querySelector('textarea[placeholder*="reply"]');
+      if (textarea) {
+        textarea.focus();
+      }
+    }, 300);
+  });
+};
+
+// Cancel reply
+const cancelReply = () => {
+  replyingTo.value = null;
+  replyText.value = '';
+};
+
+// Send reply
+const sendReply = async () => {
+  if (!replyText.value.trim() || sendingReply.value || !replyingTo.value) return;
+  if (!props.item?.id) return;
+
+  sendingReply.value = true;
+  const text = replyText.value.trim();
+  replyText.value = '';
+
+  try {
+    const accountId = currentAccountId.value;
+    if (!accountId) {
+      throw new Error('No active account');
+    }
+
+    const recipientId = props.item.id || props.item.userId || props.item.groupId;
+    if (!recipientId) {
+      throw new Error('No recipient ID');
+    }
+
+    const payload = {
+      account_id: accountId,
+      recipient_id: recipientId,
+      recipient_type: props.itemType === 'groups' ? 'group' : 'user',
+      message: text,
+      reply_to_message_id: replyingTo.value.id,
+      reply_to_zalo_message_id: replyingTo.value.message_id,
+    };
+
+    console.log('📤 [ZaloChatView] Sending reply:', payload);
+
+    const response = await axios.post('/api/zalo/messages/reply', payload);
+
+    if (response.data.success) {
+      console.log('✅ [ZaloChatView] Reply sent successfully, waiting for WebSocket');
+      
+      // IMPORTANT: Do NOT push message here!
+      // WebSocket will receive and add it automatically
+      
+      cancelReply();
+      emit('message-sent');
+    } else {
+      throw new Error(response.data.message || 'Failed to send reply');
+    }
+  } catch (error) {
+    console.error('❌ [ZaloChatView] Send reply error:', error);
+    replyText.value = text; // Restore text on error
+    
+    Swal.fire({
+      icon: 'error',
+      title: t('common.error') || 'Error',
+      text: error.response?.data?.message || error.message || 'Failed to send reply',
+    });
+  } finally {
+    sendingReply.value = false;
+  }
+};
+
+// Toggle reaction picker
+const toggleReactionPicker = (messageId) => {
+  console.log('🎯 [ZaloChatView] Toggle reaction picker:', {
+    messageId,
+    current: showReactionPickerFor.value,
+    availableReactions: availableReactions.length,
+  });
+  
+  if (showReactionPickerFor.value === messageId) {
+    showReactionPickerFor.value = null;
+  } else {
+    showReactionPickerFor.value = messageId;
+    // Close any other open pickers
+    nextTick(() => {
+      console.log('✅ [ZaloChatView] Reaction picker opened for message:', messageId);
+    });
+  }
+};
+
+// Add reaction
+const addReaction = async (message, reactionIcon) => {
+  if (!message.id) return;
+  
+  try {
+    const accountId = currentAccountId.value;
+    if (!accountId) {
+      throw new Error('No active account');
+    }
+
+    const recipientId = props.item.id || props.item.userId || props.item.groupId;
+    if (!recipientId) {
+      throw new Error('No recipient ID');
+    }
+
+    // Get cliMsgId from message metadata if available
+    const cliMsgId = message.metadata?.cliMsgId || message.message_id;
+
+    const payload = {
+      account_id: accountId,
+      message_id: message.id,
+      zalo_message_id: message.message_id,
+      cli_msg_id: cliMsgId,
+      recipient_id: recipientId,
+      recipient_type: props.itemType === 'groups' ? 'group' : 'user',
+      reaction: reactionIcon,
+    };
+
+    console.log('😊 [ZaloChatView] Adding reaction:', {
+      ...payload,
+      message_metadata: message.metadata,
+    });
+
+    const response = await axios.post('/api/zalo/messages/reaction', payload);
+
+    if (response.data.success) {
+      console.log('✅ [ZaloChatView] Reaction added successfully');
+      
+      // Reload reactions for this message
+      await loadReactions(message.id);
+      
+      // Close picker
+      showReactionPickerFor.value = null;
+    } else {
+      throw new Error(response.data.message || 'Failed to add reaction');
+    }
+  } catch (error) {
+    console.error('❌ [ZaloChatView] Add reaction error:', error);
+    Swal.fire({
+      icon: 'error',
+      title: t('common.error') || 'Error',
+      text: error.response?.data?.message || error.message || 'Failed to add reaction',
+    });
+  }
+};
+
+// Load reactions for a message
+const loadReactions = async (messageId) => {
+  try {
+    const accountId = currentAccountId.value;
+    if (!accountId) return;
+
+    const response = await axios.get(`/api/zalo/messages/${messageId}/reactions`, {
+      params: { account_id: accountId },
+    });
+
+    if (response.data.success) {
+      // Update reactions for this message
+      const message = messages.value.find(m => m.id === messageId);
+      if (message) {
+        // Map the response data to match our format
+        message.reactions = (response.data.data || []).map(reaction => ({
+          reaction: reaction.reaction,
+          count: reaction.count,
+          users: reaction.users || [],
+        }));
+      }
+    }
+  } catch (error) {
+    console.error('Failed to load reactions:', error);
+  }
+};
+
+// Get reaction emoji
+const getReactionEmoji = (reactionIcon) => {
+  const reaction = availableReactions.find(r => r.icon === reactionIcon);
+  if (reaction) return reaction.emoji;
+  
+  // Fallback mapping for common Zalo reaction icons
+  const iconMap = {
+    '/-heart': '❤️',
+    '/-strong': '👍',
+    ':>': '😂',
+    ':o': '😮',
+    ':-((': '😢',
+    ':-h': '😠',
+  };
+  
+  return iconMap[reactionIcon] || '👍';
+};
+
+// Show reaction users
+const showReactionUsers = (messageId, reaction) => {
+  const users = reaction.users || [];
+  if (users.length === 0) return;
+  
+  Swal.fire({
+    icon: 'info',
+    title: `${reaction.count} ${getReactionEmoji(reaction.reaction)}`,
+    text: users.join(', '),
+    confirmButtonText: t('common.ok') || 'OK',
+  });
+};
+
+// Watch item changes (conversation switch)
+// This ONLY runs when switching conversations, NOT on initial mount
+watch(() => props.item, (newItem, oldItem) => {
+  console.log('👁️ [ZaloChatView] props.item changed:', {
+    newItemId: newItem?.id,
+    oldItemId: oldItem?.id,
+    isSameItem: newItem?.id === oldItem?.id,
+  });
+
+  // Skip if same item (prevent duplicate on mount)
+  if (newItem?.id === oldItem?.id) {
+    console.log('⏭️ [ZaloChatView] Skipping watch - same item ID');
+    return;
+  }
+
+  // Skip if oldItem is undefined (this is initial mount, handled by onMounted)
+  if (!oldItem || !oldItem.id) {
+    console.log('⏭️ [ZaloChatView] Initial mount detected in watch, skipping (onMounted will handle)');
+    return;
+  }
+
+  // Skip if newItem is invalid
+  if (!newItem || !newItem.id) {
+    console.warn('⚠️ [ZaloChatView] New item is invalid, skipping');
+    return;
+  }
+
+  // 🔥 CRITICAL FIX: Clear messages immediately to prevent showing old conversation's messages
+  console.log('🧹 [ZaloChatView] Clearing messages before switching conversation');
+  messages.value = [];
+  loadingMessages.value = true; // Show loading immediately
+
+  // Leave old conversation room
+  if (oldItem?.id && currentAccountId.value) {
+    console.log('👋 [ZaloChatView] Leaving old conversation:', oldItem.id);
+    zaloSocket.leaveConversation(currentAccountId.value, oldItem.id);
+  }
+
+  // Join new conversation room and load messages
+  if (newItem?.id && currentAccountId.value) {
+    console.log('👋 [ZaloChatView] Joining new conversation:', newItem.id);
+    zaloSocket.joinConversation(currentAccountId.value, newItem.id);
+
+    // Load messages (handles async internally and clears loading state)
+    loadMessages().catch(error => {
+      console.error('❌ [ZaloChatView] Error loading messages in watch:', error);
+      loadingMessages.value = false; // Clear loading state on error
+    });
+
+    // 🔥 NEW: Mark conversation as read when joining
+    if (newItem.unread_count && newItem.unread_count > 0) {
+      console.log('📖 [ZaloChatView] Marking conversation as read:', newItem.id, 'unread:', newItem.unread_count);
+      markConversationAsRead(newItem.id);
+    }
+  } else {
+    // If we can't load (no accountId), clear loading state
+    console.warn('⚠️ [ZaloChatView] Cannot load messages - missing accountId or newItem.id');
+    loadingMessages.value = false;
+  }
+});
+
+// Close reaction picker and more options dropdown when clicking outside
+const handleClickOutside = (event) => {
+  if (showReactionPickerFor.value && !event.target.closest('.reaction-picker-container')) {
+    showReactionPickerFor.value = null;
+  }
+  if (moreOptionsRef.value && !moreOptionsRef.value.contains(event.target)) {
+    showMoreOptions.value = false;
+  }
+};
+
+onMounted(() => {
+  console.log('🔵 [ZaloChatView] Component mounted for:', props.item?.id);
+
+  // Connect to WebSocket
+  zaloSocket.connect();
+
+  // Wait for WebSocket to connect before joining rooms
+  const checkConnectionAndJoin = () => {
+    if (zaloSocket.isConnected.value) {
+      console.log('✅ [ZaloChatView] WebSocket connected, joining rooms...');
+
+      // Join account room for conversation updates
+      if (currentAccountId.value) {
+        zaloSocket.joinAccount(currentAccountId.value);
+      }
+
+      // Join conversation room if item is selected
+      if (props.item?.id && currentAccountId.value) {
+        zaloSocket.joinConversation(currentAccountId.value, props.item.id);
+
+        // 🔥 NEW: Mark conversation as read when joining on mount
+        if (props.item.unread_count && props.item.unread_count > 0) {
+          console.log('📖 [ZaloChatView onMounted] Marking conversation as read:', props.item.id, 'unread:', props.item.unread_count);
+          markConversationAsRead(props.item.id);
+        }
+      }
+    } else {
+      console.log('⏳ [ZaloChatView] Waiting for WebSocket to connect...');
+      // Retry after a short delay
+      setTimeout(checkConnectionAndJoin, 100);
+    }
+  };
+
+  // Start checking for connection
+  checkConnectionAndJoin();
+
+  // 🐛 DEBUG: Add raw socket listener to see ALL events
+  const rawSocket = zaloSocket.socket();
+  if (rawSocket) {
+    console.log('🐛 [ZaloChatView] Adding raw socket listener for debugging...');
+    rawSocket.on('zalo:message:new', (data) => {
+      console.log('🐛 [ZaloChatView] RAW socket event received!', data);
+    });
+  }
+
+  // Listen for new messages (ONLY ONCE!)
+  const unsubscribeMessage = zaloSocket.onMessage((data) => {
+    console.log('📨 [ZaloChatView] onMessage triggered', {
+      account_match: data.account_id === currentAccountId.value,
+      recipient_match: data.recipient_id === props.item?.id,
+      message_id: data.message?.id,
+      already_exists: data.message ? messages.value.find(m => m.id === data.message.id) : null,
+      message_metadata: data.message?.metadata,
+      message_styles: data.message?.metadata?.styles,
+    });
+
+    if (data.account_id === currentAccountId.value &&
+        data.recipient_id === props.item?.id) {
+      // Add new message to list
+      const newMessage = data.message;
+      if (newMessage && !messages.value.find(m => m.id === newMessage.id)) {
+        console.log('✅ [ZaloChatView] Adding new message to UI:', newMessage.id);
+        messages.value.push(newMessage);
+
+        // Update cache with new message
+        const conversationId = props.item.id;
+        if (messagesCache.has(conversationId)) {
+          const cachedMessages = messagesCache.get(conversationId);
+          if (!cachedMessages.find(m => m.id === newMessage.id)) {
+            messagesCache.set(conversationId, [...cachedMessages, newMessage]);
+            console.log('💾 [ZaloChatView] Updated cache with new message for:', conversationId);
+          }
+        }
+
+        nextTick(() => {
+          setTimeout(() => {
+            scrollToBottom(true); // Smooth scroll for new messages
+          }, 50);
+        });
+      } else {
+        console.warn('⚠️ [ZaloChatView] Message already exists or invalid:', {
+          has_message: !!newMessage,
+          message_id: newMessage?.id,
+          exists: newMessage ? messages.value.find(m => m.id === newMessage.id) : null,
+        });
+      }
+    }
+  });
+  
+  // Listen for new reactions
+  const unsubscribeReaction = zaloSocket.onReaction((data) => {
+    if (data.account_id === currentAccountId.value && 
+        data.recipient_id === props.item?.id) {
+      // Reload reactions for the message
+      if (data.message_id) {
+        loadReactions(data.message_id);
+      }
+    }
+  });
+  
+  // Listen for conversation updates
+  const unsubscribeConversation = zaloSocket.onConversationUpdate((data) => {
+    // Don't reload all messages - just update the conversation list
+    // The new message will be added via onMessage listener
+    // This prevents screen blinking
+    if (data.account_id === currentAccountId.value && 
+        data.recipient_id === props.item?.id) {
+      // Only update if we're not already showing this conversation
+      // The message will be added via onMessage listener above
+      console.log('📬 [ZaloChatView] Conversation updated, message will be added via onMessage');
+    }
+  });
+  
+  // Attach click outside listener for dropdown
+  document.addEventListener('click', handleClickOutside);
+
+  // Attach scroll event listener for lazy loading
+  if (messagesContainer.value) {
+    messagesContainer.value.addEventListener('scroll', handleScroll);
+    console.log('📜 [ZaloChatView] Scroll event listener attached');
+  }
+
+  // Load initial messages (ONCE!)
+  loadMessages();
+  
+  // Cleanup on unmount
+  onUnmounted(() => {
+    console.log('🔴 [ZaloChatView] Component unmounted for:', props.item?.id);
+
+    document.removeEventListener('click', handleClickOutside);
+
+    // Remove scroll event listener
+    if (messagesContainer.value) {
+      messagesContainer.value.removeEventListener('scroll', handleScroll);
+      console.log('📜 [ZaloChatView] Scroll event listener removed');
+    }
+
+    // Unsubscribe from all listeners
+    if (unsubscribeMessage) unsubscribeMessage();
+    if (unsubscribeConversation) unsubscribeConversation();
+    if (unsubscribeReaction) unsubscribeReaction();
+    
+    // Leave rooms
+    if (props.item?.id && currentAccountId.value) {
+      zaloSocket.leaveConversation(currentAccountId.value, props.item.id);
+    }
+
+    if (currentAccountId.value) {
+      zaloSocket.leaveAccount(currentAccountId.value);
+    }
+  });
+});
+</script>
+
+<style scoped>
+/* Rich text editor - bullet points */
+:deep(.editor-with-lists ul) {
+  list-style-type: disc !important;
+  padding-left: 2rem !important;
+  margin: 0.5rem 0 !important;
+}
+
+:deep(.editor-with-lists ol) {
+  list-style-type: decimal !important;
+  padding-left: 2rem !important;
+  margin: 0.5rem 0 !important;
+}
+
+:deep(.editor-with-lists ul) {
+  list-style-type: disc !important;
+  padding-left: 1.5rem !important;
+  margin: 0.5rem 0 !important;
+}
+
+:deep(.editor-with-lists ol) {
+  list-style-type: decimal !important;
+  padding-left: 1.5rem !important;
+  margin: 0.5rem 0 !important;
+}
+
+:deep(.editor-with-lists li) {
+  margin: 0.25rem 0 !important;
+  display: list-item !important;
+  list-style-type: inherit !important;
+}
+
+/* Message content - bullet points */
+.message-content ul,
+.message-content ol {
+  list-style-type: disc !important;
+  padding-left: 1.5rem !important;
+  margin: 0.5rem 0 !important;
+}
+
+.message-content ol {
+  list-style-type: decimal !important;
+}
+
+.message-content li {
+  margin: 0.25rem 0 !important;
+  display: list-item !important;
+}
+
+/* ULTIMATE FIX: Complete CSS reset for Zalo images */
+.zalo-image-container {
+  all: unset !important;
+  display: block !important;
+  margin-top: 8px !important;
+  cursor: pointer !important;
+  position: relative !important;
+  z-index: 1 !important;
+  background: transparent !important;
+}
+
+.zalo-image-preview {
+  all: unset !important;
+  display: block !important;
+  max-width: 250px !important;
+  max-height: 250px !important;
+  width: auto !important;
+  height: auto !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  position: relative !important;
+  z-index: 1 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important;
+  background: white !important;
+  object-fit: contain !important;
+  filter: none !important;
+  transform: none !important;
+  mix-blend-mode: normal !important;
+}
+
+/* Override for ANY Zalo CDN image */
+img[src*="zdn.vn"],
+img[src*="dlfl.vn"] {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  background: white !important;
+  filter: none !important;
+}
+</style>

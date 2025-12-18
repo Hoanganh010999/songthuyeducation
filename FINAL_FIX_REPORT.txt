@@ -1,0 +1,134 @@
+===================================================================
+               BÁO CÁO SỬA LỖI - LẦN 2 (HOÀN CHỈNH)
+===================================================================
+
+NGÀY: 2025-12-15 00:02:38
+
+VẤN ĐỀ PHÁT SINH SAU LẦN SỬA ĐẦU TIÊN
+-------------------------------------------------------------------
+Sau khi sửa lần 1:
+- ✓ Đã sửa students.branch_id (53 students: 2 → 1)
+- ✓ Đã update code logic login
+- ✗ User vẫn thấy branch Thống Nhất khi login
+- ✗ Dropdown chỉ hiển thị Thống Nhất
+
+NGUYÊN NHÂN GỐC
+-------------------------------------------------------------------
+1. Students có DUPLICATE records trong 2 bảng:
+   - students.branch_id = 1 (Yên Tâm) ✓ ĐÚNG
+   - branch_user.branch_id = 2 (Thống Nhất) ✗ SAI
+
+2. Frontend BranchSwitcher lấy user.branches từ branch_user
+   → Hiển thị sai branch
+
+3. API /user trả về user.branches từ relationship
+   → Không phải từ students/parents table
+
+CÁC BƯỚC SỬA LỖI
+-------------------------------------------------------------------
+
+BƯỚC 1: XÓA RECORDS SAI TRONG branch_user
+- Tổng students có branch_user records: 280
+- Đã xóa: 280 records
+- Lý do: Students không nên có records trong branch_user
+          Branch của students được lưu trong students.branch_id
+
+BƯỚC 2: CẬP NHẬT API /user
+File: routes/api.php
+- Thêm logic override branches array cho students/parents
+- Students/parents chỉ thấy 1 branch duy nhất từ students/parents.branch_id
+- Employees vẫn thấy nhiều branches từ branch_user (nếu có)
+
+Code đã thêm:
+
+Warning: PHP Startup: Unable to load dynamic library 'bz2' (tried: \xampp\php\ext\bz2 (The specified module could not be found), \xampp\php\ext\php_bz2.dll (The specified module could not be found)) in Unknown on line 0
+
+Warning: PHP Startup: Unable to load dynamic library 'curl' (tried: \xampp\php\ext\curl (The specified module could not be found), \xampp\php\ext\php_curl.dll (The specified module could not be found)) in Unknown on line 0
+
+Warning: PHP Startup: Unable to load dynamic library 'fileinfo' (tried: \xampp\php\ext\fileinfo (The specified module could not be found), \xampp\php\ext\php_fileinfo.dll (The specified module could not be found)) in Unknown on line 0
+
+Warning: PHP Startup: Unable to load dynamic library 'gd' (tried: \xampp\php\ext\gd (The specified module could not be found), \xampp\php\ext\php_gd.dll (The specified module could not be found)) in Unknown on line 0
+
+Warning: PHP Startup: Unable to load dynamic library 'gettext' (tried: \xampp\php\ext\gettext (The specified module could not be found), \xampp\php\ext\php_gettext.dll (The specified module could not be found)) in Unknown on line 0
+
+Warning: PHP Startup: Unable to load dynamic library 'mbstring' (tried: \xampp\php\ext\mbstring (The specified module could not be found), \xampp\php\ext\php_mbstring.dll (The specified module could not be found)) in Unknown on line 0
+
+Warning: PHP Startup: Unable to load dynamic library 'exif' (tried: \xampp\php\ext\exif (The specified module could not be found), \xampp\php\ext\php_exif.dll (The specified module could not be found)) in Unknown on line 0
+
+Warning: PHP Startup: Unable to load dynamic library 'mysqli' (tried: \xampp\php\ext\mysqli (The specified module could not be found), \xampp\php\ext\php_mysqli.dll (The specified module could not be found)) in Unknown on line 0
+
+Warning: PHP Startup: Unable to load dynamic library 'pdo_mysql' (tried: \xampp\php\ext\pdo_mysql (The specified module could not be found), \xampp\php\ext\php_pdo_mysql.dll (The specified module could not be found)) in Unknown on line 0
+
+Warning: PHP Startup: Unable to load dynamic library 'pdo_sqlite' (tried: \xampp\php\ext\pdo_sqlite (The specified module could not be found), \xampp\php\ext\php_pdo_sqlite.dll (The specified module could not be found)) in Unknown on line 0
+
+Warning: PHP Startup: Unable to load dynamic library 'zip' (tried: \xampp\php\ext\zip (The specified module could not be found), \xampp\php\ext\php_zip.dll (The specified module could not be found)) in Unknown on line 0
+
+Warning: PHP Startup: Unable to load dynamic library 'php_openssl.dll' (tried: \xampp\php\ext\php_openssl.dll (The specified module could not be found), \xampp\php\ext\php_php_openssl.dll.dll (The specified module could not be found)) in Unknown on line 0
+
+Warning: PHP Startup: Unable to load dynamic library 'php_ftp.dll' (tried: \xampp\php\ext\php_ftp.dll (The specified module could not be found), \xampp\php\ext\php_php_ftp.dll.dll (The specified module could not be found)) in Unknown on line 0
+
+Warning: Cannot open "\xampp\php\extras\browscap.ini" for reading in Unknown on line 0
+
+Fatal error: Unable to start standard module in Unknown on line 0
+
+KẾT QUẢ KIỂM TRA
+-------------------------------------------------------------------
+Test case: user00129@songthuy.edu.vn
+
+✓ Student branch_id: 1 (Yên Tâm)
+✓ current_branch_id: 1
+✓ branches array: [Yên Tâm]
+✓ API response đúng
+
+KHI LOGIN:
+- Backend sẽ trả về current_branch_id = 1
+- Backend sẽ trả về branches = [Yên Tâm]
+- Frontend sẽ hiển thị dropdown với 1 branch duy nhất: Yên Tâm
+- User sẽ login vào branch Yên Tâm
+
+HÀNH ĐỘNG CẦN THIẾT
+-------------------------------------------------------------------
+1. ✓ User PHẢI LOGOUT khỏi hệ thống
+2. ✓ Xóa localStorage trong browser (F12 → Application → Local Storage)
+3. ✓ LOGIN LẠI với user00129@songthuy.edu.vn
+4. ✓ Kiểm tra dropdown branch chỉ hiển thị Yên Tâm
+
+CÁCH XÓA localStorage:
+- Nhấn F12 trong browser
+- Chọn tab Application hoặc Storage
+- Mở Local Storage → chọn domain
+- Xóa key current_branch_id và token
+- Hoặc xóa toàn bộ Local Storage
+
+TỔNG KẾT TOÀN BỘ THAY ĐỔI
+-------------------------------------------------------------------
+
+1. CODE CHANGES:
+   - routes/api.php (login endpoint): Ưu tiên students → parents → employees
+   - routes/api.php (/user endpoint): Override branches cho students/parents
+   - app/Models/User.php: Update getPrimaryBranchIdAttribute accessor
+   - resources/js/stores/auth.js: Remove localStorage khi branch_id null
+   - resources/js/components/BranchSwitcher.vue: Ưu tiên backend branch_id
+
+2. DATA CHANGES:
+   - Sửa 53 students: students.branch_id từ 2 → 1
+   - Xóa 280 records trong branch_user cho ALL students
+
+3. RULES MỚI:
+   ✓ Students KHÔNG được có records trong branch_user
+   ✓ Students chỉ có 1 branch duy nhất từ students.branch_id
+   ✓ Parents KHÔNG được có records trong branch_user
+   ✓ Parents chỉ có 1 branch duy nhất từ parents.branch_id
+   ✓ Employees CÓ THỂ có nhiều branches trong branch_user
+
+===================================================================
+                     ĐÃ HOÀN TẤT
+===================================================================
+
+✓ Đã xóa toàn bộ branch_user records cho students
+✓ Đã update API /user để trả về đúng branches
+✓ Đã deploy lên VPS và clear cache
+✓ User00129 giờ sẽ thấy ĐÚNG branch Yên Tâm
+
+NEXT: User cần LOGOUT và LOGIN LẠI!
+===================================================================

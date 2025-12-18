@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Frontend Translations</title>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: monospace; padding: 20px; }
+        .success { color: green; }
+        .error { color: red; }
+        .warning { color: orange; }
+        pre { background: #f5f5f5; padding: 10px; overflow-x: auto; }
+        button { padding: 10px 20px; margin: 10px 0; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>Frontend Translations Debug</h1>
+
+    <button onclick="checkLocalStorage()">Check localStorage</button>
+    <button onclick="fetchAPI()">Test API Call</button>
+    <button onclick="clearAndRefresh()">Clear Cache & Reload</button>
+
+    <div id="output"></div>
+
+    <script>
+        const output = document.getElementById('output');
+
+        function log(message, type = 'info') {
+            const div = document.createElement('div');
+            div.className = type;
+            div.textContent = message;
+            output.appendChild(div);
+        }
+
+        function logPre(data) {
+            const pre = document.createElement('pre');
+            pre.textContent = JSON.stringify(data, null, 2);
+            output.appendChild(pre);
+        }
+
+        function checkLocalStorage() {
+            output.innerHTML = '<h2>localStorage Check:</h2>';
+
+            const keys = Object.keys(localStorage);
+            log(`Total localStorage keys: ${keys.length}`);
+
+            // Find translation keys
+            const translationKeys = keys.filter(k =>
+                k.includes('translation') || k.includes('language') || k.includes('i18n')
+            );
+
+            log(`Translation-related keys: ${translationKeys.length}`, 'warning');
+
+            translationKeys.forEach(key => {
+                log(`\nKey: ${key}`);
+                try {
+                    const data = JSON.parse(localStorage.getItem(key));
+
+                    if (data && typeof data === 'object') {
+                        // Check if it has examination group
+                        if (data.examination) {
+                            log(`✅ Has examination group with ${Object.keys(data.examination).length} keys`, 'success');
+
+                            // Check for index.* keys
+                            const indexKeys = Object.keys(data.examination).filter(k => k.startsWith('index.'));
+                            log(`  - Index keys: ${indexKeys.length}`, indexKeys.length > 0 ? 'success' : 'error');
+
+                            if (indexKeys.length > 0) {
+                                log(`  - Sample: ${indexKeys.slice(0, 3).join(', ')}`);
+                            }
+                        } else if (data.translations && data.translations.examination) {
+                            log(`✅ Has nested examination group with ${Object.keys(data.translations.examination).length} keys`, 'success');
+
+                            const indexKeys = Object.keys(data.translations.examination).filter(k => k.startsWith('index.'));
+                            log(`  - Index keys: ${indexKeys.length}`, indexKeys.length > 0 ? 'success' : 'error');
+                        } else {
+                            log(`❌ No examination group found`, 'error');
+                            log(`Available groups: ${Object.keys(data.translations || data).join(', ')}`);
+                        }
+                    }
+                } catch (e) {
+                    log(`Error parsing: ${e.message}`, 'error');
+                }
+            });
+        }
+
+        async function fetchAPI() {
+            output.innerHTML = '<h2>API Test:</h2>';
+            log('Fetching translations from API...');
+
+            try {
+                const response = await fetch('/api/languages/vi/translations');
+                const data = await response.json();
+
+                if (data.success) {
+                    log('✅ API call successful', 'success');
+
+                    const trans = data.data.translations;
+                    log(`Total groups: ${Object.keys(trans).length}`);
+
+                    if (trans.examination) {
+                        log(`✅ Examination group EXISTS with ${Object.keys(trans.examination).length} keys`, 'success');
+
+                        const indexKeys = Object.keys(trans.examination).filter(k => k.startsWith('index.'));
+                        log(`✅ Index keys: ${indexKeys.length}`, 'success');
+                        log(`Sample index keys:`);
+                        logPre(indexKeys.slice(0, 5));
+                    } else {
+                        log('❌ Examination group NOT FOUND in API response', 'error');
+                        log('Available groups: ' + Object.keys(trans).join(', '));
+                    }
+                } else {
+                    log('❌ API returned error', 'error');
+                    logPre(data);
+                }
+            } catch (e) {
+                log(`❌ API call failed: ${e.message}`, 'error');
+            }
+        }
+
+        function clearAndRefresh() {
+            // Clear all translation caches
+            const keys = Object.keys(localStorage);
+            keys.forEach(key => {
+                if (key.includes('translation') || key.includes('language') || key.includes('i18n')) {
+                    localStorage.removeItem(key);
+                }
+            });
+
+            alert('Cleared translation cache. Page will reload...');
+            window.location.reload(true); // Hard reload
+        }
+
+        // Auto-run checks on load
+        window.onload = function() {
+            checkLocalStorage();
+        };
+    </script>
+</body>
+</html>
